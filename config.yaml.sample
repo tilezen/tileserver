@@ -1,0 +1,16 @@
+postgresql:
+  host: localhost
+  port: 5432
+  dbnames: [osm]
+  user: osm
+  password:
+tilestache:
+  config: ../vector-datasource/tilestache.cfg
+store:
+  type: directory
+  name: tiles
+server:
+  host: localhost
+  port: 8080
+  debug: true
+  reload: true

@@ -10,7 +10,7 @@ from tilequeue.utils import format_stacktrace_one_line
 from TileStache import parseConfigfile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
-import os
+import yaml
 
 
 def coord_is_valid(coord):
@@ -80,7 +80,7 @@ def parse_layer_spec(layer_spec, layer_config):
     return layer_data
 
 
-class TileServe(object):
+class TileServer(object):
 
     def __init__(self, layer_config, data_fetcher, store, io_pool):
         self.layer_config = layer_config
@@ -167,30 +167,65 @@ def parse_tilestache_config(tilestache_config):
     return layer_config
 
 
-if __name__ == '__main__':
-    from werkzeug.serving import run_simple
+def make_store(store_type, store_name, store_config):
+    if store_type == 'directory':
+        from tilequeue.store import make_tile_file_store
+        return make_tile_file_store(store_name)
 
-    # TODO take config from yaml file instead of hardcoding sibling path
-    cwd = os.getcwd()
-    vector_datasource_rel_path = os.path.join(cwd, '..', 'vector-datasource')
-    tilestache_rel_config_path = os.path.join(vector_datasource_rel_path,
-                                              'tilestache.cfg')
-    tilestache_config_path = os.path.abspath(tilestache_rel_config_path)
+    elif store_type == 's3':
+        from tilequeue.store import make_s3_store
+        path = store_config.get('path', 'osm')
+        reduced_redundancy = store_config.get('reduced_redundancy', True)
+        return make_s3_store(
+            store_name, path=path, reduced_redundancy=reduced_redundancy)
+
+    else:
+        raise ValueError('Unrecognized store type: `{}`'.format(store_type))
+
+
+def create_tileserver_from_config(config):
+    """create a tileserve object from yaml configuration"""
+    tilestache_config_path = config['tilestache']['config']
     tilestache_config = parseConfigfile(tilestache_config_path)
     layer_config = parse_tilestache_config(tilestache_config)
 
-    # TODO should come from config
-    conn_info = dict(host='localhost', dbnames=['osm'], user='osm')
+    conn_info = config['postgresql']
     n_conn = len(layer_config.layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
         conn_info, layer_config.all_layers, io_pool, n_conn)
 
-    # TODO config for store - share creation config with tilequeue?
-    from tilequeue.store import make_tile_file_store
-    store = make_tile_file_store('tiles')
+    store_config = config['store']
+    store = make_store(
+        store_config['type'], store_config['name'], store_config)
 
-    tile_serve = TileServe(layer_config, data_fetcher, store, io_pool)
-    # TODO config for host, port, debug, reloader
-    run_simple('127.0.0.1', 8080, tile_serve,
-               use_debugger=True, use_reloader=True)
+    tile_server = TileServer(layer_config, data_fetcher, store, io_pool)
+    return tile_server
+
+
+def wsgi_server(config_path):
+    """create wsgi server given a config path"""
+    with open(config_path) as fp:
+        config = yaml.load(fp)
+    tile_server = create_tileserver_from_config(config)
+    return tile_server
+
+
+if __name__ == '__main__':
+    from werkzeug.serving import run_simple
+    import sys
+
+    if len(sys.argv) == 1:
+        print 'Pass in path to config file'
+        sys.exit(1)
+
+    config_path = sys.argv[1]
+    with open(config_path) as fp:
+        config = yaml.load(fp)
+
+    tile_server = create_tileserver_from_config(config)
+
+    server_config = config['server']
+    run_simple(server_config['host'], server_config['port'], tile_server,
+               use_debugger=server_config.get('debug', False),
+               use_reloader=server_config.get('reload', False))

@@ -15,6 +15,5 @@ Then:
 
 ## Usage
 
-At the moment, tileserver assumes that the `mapzen/vector-datasource` is checked out as a sibling. This will change to a configuration file shortly.
-
-    python tileserver/__init__.py
+    cp config.yaml.sample config.yaml
+    python tileserver/__init__.py config.yaml

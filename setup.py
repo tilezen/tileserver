@@ -18,6 +18,7 @@ setup(name='tileserver',
       include_package_data=True,
       zip_safe=False,
       install_requires=[
+          'PyYAML',
           'tilequeue',
           'TileStache',
           'werkzeug',
