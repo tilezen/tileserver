@@ -136,7 +136,6 @@ def async_store(store, tile_data, coord, format):
         store.write_tile(tile_data, coord, format)
     except:
         stacktrace = format_stacktrace_one_line()
-        # TODO logging
         print 'Error storing coord %s with format %s: %s' % (
             serialize_coord(coord), format.extension, stacktrace)
 
