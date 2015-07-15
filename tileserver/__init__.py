@@ -124,8 +124,10 @@ class TileServe(object):
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data, coord, format))
 
-        # TODO any cache headers? etag perhaps?
-        return Response(tile_data, mimetype=format.mimetype)
+        response = Response(tile_data, mimetype=format.mimetype)
+        response.add_etag()
+        response.make_conditional(request)
+        return response
 
 
 def async_store(store, tile_data, coord, format):
