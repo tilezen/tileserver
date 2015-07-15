@@ -100,6 +100,7 @@ class TileServer(object):
         request_data = parse_request_path(request.path)
         if request_data is None:
             return self.generate_404()
+        layer_spec = request_data.layer_spec
         layer_data = parse_layer_spec(request_data.layer_spec,
                                       self.layer_config)
         if layer_data is None:
@@ -120,7 +121,8 @@ class TileServer(object):
         formatted_tile = formatted_tiles[0]
         tile_data = formatted_tile['tile']
 
-        if self.store:
+        # we only want to store requests for the all layer
+        if self.store and layer_spec == 'all':
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data, coord, format))
 
