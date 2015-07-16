@@ -82,11 +82,13 @@ def parse_layer_spec(layer_spec, layer_config):
 
 class TileServer(object):
 
-    def __init__(self, layer_config, data_fetcher, store, io_pool):
+    def __init__(self, layer_config, data_fetcher, io_pool, store,
+                 redis_cache_index):
         self.layer_config = layer_config
         self.data_fetcher = data_fetcher
-        self.store = store
         self.io_pool = io_pool
+        self.store = store
+        self.redis_cache_index = redis_cache_index
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -126,6 +128,11 @@ class TileServer(object):
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data, coord, format))
 
+        # update the tiles of interest set with the new coordinate
+        if self.redis_cache_index:
+            self.io_pool.apply_async(async_update_tiles_of_interest,
+                                     (self.redis_cache_index, coord))
+
         response = Response(tile_data, mimetype=format.mimetype)
         response.add_etag()
         response.make_conditional(request)
@@ -133,13 +140,26 @@ class TileServer(object):
 
 
 def async_store(store, tile_data, coord, format):
-    """store tile_data in the background"""
+    """update cache store with tile_data"""
     try:
         store.write_tile(tile_data, coord, format)
     except:
         stacktrace = format_stacktrace_one_line()
         print 'Error storing coord %s with format %s: %s' % (
             serialize_coord(coord), format.extension, stacktrace)
+
+
+def async_update_tiles_of_interest(redis_cache_index, coord):
+    """update tiles of interest set"""
+    try:
+        redis_cache_index.index_coord(coord)
+        if coord.zoom > 18:
+            coord_at_z18 = coord.zoomTo(18)
+            redis_cache_index.index_coord(coord_at_z18)
+    except:
+        stacktrace = format_stacktrace_one_line()
+        print 'Error updating tiles of interest for coord %s: %s\n' % (
+            serialize_coord(coord), stacktrace)
 
 
 class LayerConfig(object):
@@ -196,11 +216,27 @@ def create_tileserver_from_config(config):
     data_fetcher = DataFetcher(
         conn_info, layer_config.all_layers, io_pool, n_conn)
 
-    store_config = config['store']
-    store = make_store(
-        store_config['type'], store_config['name'], store_config)
+    store = None
+    store_config = config.get('store')
+    if store_config:
+        store_type = store_config.get('type')
+        store_name = store_config.get('name')
+        if store_type and store_name:
+            store = make_store(store_type, store_name, store_config)
 
-    tile_server = TileServer(layer_config, data_fetcher, store, io_pool)
+    redis_cache_index = None
+    redis_config = config.get('redis')
+    if redis_config:
+        from redis import StrictRedis
+        from tilequeue.cache import RedisCacheIndex
+        redis_host = redis_config.get('host', 'localhost')
+        redis_port = redis_config.get('port', 6379)
+        redis_db = redis_config.get('db', 0)
+        redis_client = StrictRedis(redis_host, redis_port, redis_db)
+        redis_cache_index = RedisCacheIndex(redis_client)
+
+    tile_server = TileServer(
+        layer_config, data_fetcher, io_pool, store, redis_cache_index)
     return tile_server
 
 
