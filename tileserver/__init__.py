@@ -7,9 +7,10 @@ from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
 from tilequeue.tile import serialize_coord
 from tilequeue.utils import format_stacktrace_one_line
-from TileStache import parseConfigfile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
+import json
+import os
 import yaml
 
 
@@ -173,21 +174,6 @@ class LayerConfig(object):
                            for x in self.all_layer_names]
 
 
-def parse_tilestache_config(tilestache_config):
-    """generate layer config from tilestache config object
-
-    don't just take the all layer, because some layers exist that
-    aren't a part of all"""
-    layers = tilestache_config.layers
-    all_layer = layers.get('all')
-    assert all_layer is not None, 'all layer is expected in tilestache config'
-    all_layer_names = all_layer.provider.names
-    layer_names = [x for x in layers if x not in ('all', ',')]
-    layer_data = parse_layer_data_layers(tilestache_config, layer_names)
-    layer_config = LayerConfig(all_layer_names, layer_data)
-    return layer_config
-
-
 def make_store(store_type, store_name, store_config):
     if store_type == 'directory':
         from tilequeue.store import make_tile_file_store
@@ -204,11 +190,50 @@ def make_store(store_type, store_name, store_config):
         raise ValueError('Unrecognized store type: `{}`'.format(store_type))
 
 
+def parse_layer_config(ts_json_data, query_basepath):
+    layers_cfg = ts_json_data['layers']
+    all_layer_cfg = layers_cfg.get('all')
+    assert all_layer_cfg is not None, 'Missing "all" layer in config'
+    all_layer_names = all_layer_cfg['provider']['kwargs']['names']
+    layer_data = []
+    for layer_name, layer_cfg in layers_cfg.items():
+        if layer_name == 'all':
+            continue
+        layer_kwargs = layer_cfg['provider']['kwargs']
+        layer_queries = []
+        layer_query_paths = layer_kwargs['queries']
+        for query_path in layer_query_paths:
+            if query_path is None:
+                query = None
+            else:
+                query_path = os.path.join(query_basepath, query_path)
+                with open(query_path) as query_fp:
+                    query = query_fp.read()
+            layer_queries.append(query)
+        layer_datum = dict(
+            name=layer_name,
+            queries=layer_queries,
+            is_clipped=layer_kwargs.get('clip', True),
+            geometry_types=layer_kwargs.get('geometry_types'),
+            simplify_until=layer_kwargs.get('simplify_until', 16),
+            suppress_simplification=layer_kwargs.get(
+                'suppress_simplification', ()),
+            transform_fn_names=layer_kwargs.get('transform_fns'),
+            sort_fn_name=layer_kwargs.get('sort_fn_name'),
+            simplify_before_intersect=layer_kwargs.get(
+                'simplify_before_intersect', False),
+        )
+        layer_data.append(layer_datum)
+    return LayerConfig(all_layer_names, layer_data)
+
+
 def create_tileserver_from_config(config):
     """create a tileserve object from yaml configuration"""
     tilestache_config_path = config['tilestache']['config']
-    tilestache_config = parseConfigfile(tilestache_config_path)
-    layer_config = parse_tilestache_config(tilestache_config)
+    with open(tilestache_config_path) as fp:
+        ts_json_data = json.load(fp)
+    query_basepath = os.path.dirname(tilestache_config_path)
+    layer_config = parse_layer_config(ts_json_data, query_basepath)
 
     conn_info = config['postgresql']
     n_conn = len(layer_config.layer_data)
