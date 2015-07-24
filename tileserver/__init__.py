@@ -83,6 +83,10 @@ def parse_layer_spec(layer_spec, layer_config):
 
 class TileServer(object):
 
+    # whether to re-raise errors on request handling
+    # we want this during development, but not during production
+    propagate_errors = False
+
     def __init__(self, layer_config, data_fetcher, io_pool, store,
                  redis_cache_index):
         self.layer_config = layer_config
@@ -93,7 +97,16 @@ class TileServer(object):
 
     def __call__(self, environ, start_response):
         request = Request(environ)
-        response = self.handle_request(request)
+        try:
+            response = self.handle_request(request)
+        except:
+            if self.propagate_errors:
+                raise
+            stacktrace = format_stacktrace_one_line()
+            print 'Error handling request for %s: %s' % (
+                request.path, stacktrace)
+            response = Response(
+                'Internal Server Error', status=500, mimetype='text/plain')
         return response(environ, start_response)
 
     def generate_404(self):
@@ -111,6 +124,7 @@ class TileServer(object):
 
         coord = request_data.coord
         format = request_data.format
+
         feature_data = self.data_fetcher(coord, layer_data)
         formatted_tiles = process_coord(
             coord,
@@ -286,6 +300,7 @@ if __name__ == '__main__':
         config = yaml.load(fp)
 
     tile_server = create_tileserver_from_config(config)
+    tile_server.propagate_errors = True
 
     server_config = config['server']
     run_simple(server_config['host'], server_config['port'], tile_server,
