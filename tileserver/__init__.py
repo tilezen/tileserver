@@ -1,7 +1,6 @@
 from collections import namedtuple
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
-from tilequeue.command import parse_layer_data_layers
 from tilequeue.format import extension_to_format
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
