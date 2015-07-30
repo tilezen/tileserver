@@ -147,7 +147,10 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
-        response = Response(tile_data, mimetype=format.mimetype)
+        response = Response(
+            tile_data,
+            mimetype=format.mimetype,
+            headers=[('Access-Control-Allow-Origin', '*')])
         response.add_etag()
         response.make_conditional(request)
         return response
