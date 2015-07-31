@@ -16,8 +16,6 @@ import yaml
 def coord_is_valid(coord):
     if coord.zoom < 0 or coord.column < 0 or coord.row < 0:
         return False
-    if coord.zoom > 20:
-        return False
     maxval = 2 ** coord.zoom
     if coord.column >= maxval or coord.row >= maxval:
         return False
@@ -138,7 +136,7 @@ class TileServer(object):
         tile_data = formatted_tile['tile']
 
         # we only want to store requests for the all layer
-        if self.store and layer_spec == 'all':
+        if self.store and layer_spec == 'all' and coord.zoom <= 20:
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data, coord, format))
 
