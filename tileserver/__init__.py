@@ -107,7 +107,7 @@ class TileServer(object):
         return response(environ, start_response)
 
     def generate_404(self):
-        return Response('Not Found', 404, mimetype='text/plain')
+        return Response('Not Found', status=404, mimetype='text/plain')
 
     def handle_request(self, request):
         request_data = parse_request_path(request.path)
