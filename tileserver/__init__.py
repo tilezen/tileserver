@@ -1,6 +1,7 @@
 from collections import namedtuple
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
+from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
@@ -8,8 +9,6 @@ from tilequeue.tile import serialize_coord
 from tilequeue.utils import format_stacktrace_one_line
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
-import json
-import os
 import yaml
 
 
@@ -204,56 +203,25 @@ def make_store(store_type, store_name, store_config):
         raise ValueError('Unrecognized store type: `{}`'.format(store_type))
 
 
-def parse_layer_config(ts_json_data, query_basepath):
-    layers_cfg = ts_json_data['layers']
-    all_layer_cfg = layers_cfg.get('all')
-    assert all_layer_cfg is not None, 'Missing "all" layer in config'
-    all_layer_names = all_layer_cfg['provider']['kwargs']['names']
-    layer_data = []
-    for layer_name, layer_cfg in layers_cfg.items():
-        if layer_name == 'all':
-            continue
-        layer_kwargs = layer_cfg['provider']['kwargs']
-        layer_queries = []
-        layer_query_paths = layer_kwargs['queries']
-        for query_path in layer_query_paths:
-            if query_path is None:
-                query = None
-            else:
-                query_path = os.path.join(query_basepath, query_path)
-                with open(query_path) as query_fp:
-                    query = query_fp.read()
-            layer_queries.append(query)
-        layer_datum = dict(
-            name=layer_name,
-            queries=layer_queries,
-            is_clipped=layer_kwargs.get('clip', True),
-            geometry_types=layer_kwargs.get('geometry_types'),
-            simplify_until=layer_kwargs.get('simplify_until', 16),
-            suppress_simplification=layer_kwargs.get(
-                'suppress_simplification', ()),
-            transform_fn_names=layer_kwargs.get('transform_fns'),
-            sort_fn_name=layer_kwargs.get('sort_fn_name'),
-            simplify_before_intersect=layer_kwargs.get(
-                'simplify_before_intersect', False),
-        )
-        layer_data.append(layer_datum)
-    return LayerConfig(all_layer_names, layer_data)
-
-
 def create_tileserver_from_config(config):
     """create a tileserve object from yaml configuration"""
-    tilestache_config_path = config['tilestache']['config']
-    with open(tilestache_config_path) as fp:
-        ts_json_data = json.load(fp)
-    query_basepath = os.path.dirname(tilestache_config_path)
-    layer_config = parse_layer_config(ts_json_data, query_basepath)
+    query_config = config['queries']
+    queries_config_path = query_config['config']
+    template_path = query_config['template-path']
+    reload_templates = query_config['reload-templates']
+
+    with open(queries_config_path) as query_cfg_fp:
+        queries_config = yaml.load(query_cfg_fp)
+    all_layer_data, layer_data = parse_layer_data(
+        queries_config, template_path, reload_templates)
+    all_layer_names = [x['name'] for x in all_layer_data]
+    layer_config = LayerConfig(all_layer_names, layer_data)
 
     conn_info = config['postgresql']
-    n_conn = len(layer_config.layer_data)
+    n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
-        conn_info, layer_config.all_layers, io_pool, n_conn)
+        conn_info, all_layer_data, io_pool, n_conn)
 
     store = None
     store_config = config.get('store')
