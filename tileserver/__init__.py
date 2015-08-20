@@ -9,6 +9,8 @@ from tilequeue.tile import serialize_coord
 from tilequeue.utils import format_stacktrace_one_line
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
+import psycopg2
+import random
 import yaml
 
 
@@ -84,12 +86,13 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, data_fetcher, io_pool, store,
-                 redis_cache_index):
+                 redis_cache_index, health_checker=None):
         self.layer_config = layer_config
         self.data_fetcher = data_fetcher
         self.io_pool = io_pool
         self.store = store
         self.redis_cache_index = redis_cache_index
+        self.health_checker = health_checker
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -109,6 +112,9 @@ class TileServer(object):
         return Response('Not Found', status=404, mimetype='text/plain')
 
     def handle_request(self, request):
+        if (self.health_checker and
+                self.health_checker.is_health_check(request)):
+            return self.health_checker(request)
         request_data = parse_request_path(request.path)
         if request_data is None:
             return self.generate_404()
@@ -203,6 +209,35 @@ def make_store(store_type, store_name, store_config):
         raise ValueError('Unrecognized store type: `{}`'.format(store_type))
 
 
+class HealthChecker(object):
+
+    def __init__(self, url, conn_info):
+        self.url = url
+        conn_info_dbnames = conn_info.copy()
+        self.dbnames = conn_info_dbnames.pop('dbnames')
+        assert len(self.dbnames) > 0
+        self.conn_info_no_dbname = conn_info_dbnames
+
+    def is_health_check(self, request):
+        return request.path == self.url
+
+    def __call__(self, request):
+        dbname = random.choice(self.dbnames)
+        conn_info = dict(self.conn_info_no_dbname, dbname=dbname)
+        conn = psycopg2.connect(**conn_info)
+        conn.set_session(readonly=True, autocommit=True)
+        try:
+            cursor = conn.cursor()
+            cursor.execute('select 1')
+            records = cursor.fetchall()
+            assert len(records) == 1
+            assert len(records[0]) == 1
+            assert records[0][0] == 1
+        finally:
+            conn.close()
+        return Response('OK', mimetype='text/plain')
+
+
 def create_tileserver_from_config(config):
     """create a tileserve object from yaml configuration"""
     query_config = config['queries']
@@ -242,8 +277,15 @@ def create_tileserver_from_config(config):
         redis_client = StrictRedis(redis_host, redis_port, redis_db)
         redis_cache_index = RedisCacheIndex(redis_client)
 
+    health_checker = None
+    health_check_config = config.get('health')
+    if health_check_config:
+        health_check_url = health_check_config['url']
+        health_checker = HealthChecker(health_check_url, conn_info)
+
     tile_server = TileServer(
-        layer_config, data_fetcher, io_pool, store, redis_cache_index)
+        layer_config, data_fetcher, io_pool, store, redis_cache_index,
+        health_checker)
     return tile_server
 
 
