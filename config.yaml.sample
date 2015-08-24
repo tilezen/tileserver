@@ -4,8 +4,10 @@ postgresql:
   dbnames: [osm]
   user: osm
   password:
-tilestache:
-  config: ../vector-datasource/tilestache.cfg
+queries:
+  config: ../vector-datasource/queries.yaml
+  template-path: ../vector-datasource/queries
+  reload-templates: true
 store:
   type: directory
   name: tiles
