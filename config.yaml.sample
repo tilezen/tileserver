@@ -8,9 +8,6 @@ queries:
   config: ../vector-datasource/queries.yaml
   template-path: ../vector-datasource/queries
   reload-templates: true
-store:
-  type: directory
-  name: tiles
 server:
   host: localhost
   port: 8080
