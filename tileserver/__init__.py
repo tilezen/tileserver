@@ -1,16 +1,23 @@
 from collections import namedtuple
+from cStringIO import StringIO
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
+from tilequeue.format import json_format
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
+from tilequeue.tile import coord_to_mercator_bounds
 from tilequeue.tile import serialize_coord
+from tilequeue.transform import mercator_point_to_wgs84
 from tilequeue.utils import format_stacktrace_one_line
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
+import json
 import psycopg2
 import random
+import shapely.geometry
+import shapely.wkb
 import yaml
 
 
@@ -79,6 +86,31 @@ def parse_layer_spec(layer_spec, layer_config):
     return layer_data
 
 
+def decode_json_tile_for_layers(tile_data, layer_data):
+    layer_names_to_keep = set(ld['name'] for ld in layer_data)
+    feature_layers = []
+    json_data = json.loads(tile_data)
+    for layer_name, json_layer_data in json_data.items():
+        if layer_name not in layer_names_to_keep:
+            continue
+        features = []
+        json_features = json_layer_data['features']
+        for json_feature in json_features:
+            json_geometry = json_feature['geometry']
+            shape = shapely.geometry.shape(json_geometry)
+            wkb = shapely.wkb.dumps(shape)
+            properties = json_feature['properties']
+            fid = None
+            feature = wkb, properties, fid
+            features.append(feature)
+        feature_layer = dict(
+            name=layer_name,
+            features=features,
+        )
+        feature_layers.append(feature_layer)
+    return feature_layers
+
+
 class TileServer(object):
 
     # whether to re-raise errors on request handling
@@ -112,6 +144,15 @@ class TileServer(object):
     def generate_404(self):
         return Response('Not Found', status=404, mimetype='text/plain')
 
+    def create_response(self, request, tile_data, format):
+        response = Response(
+            tile_data,
+            mimetype=format.mimetype,
+            headers=[('Access-Control-Allow-Origin', '*')])
+        response.add_etag()
+        response.make_conditional(request)
+        return response
+
     def handle_request(self, request):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
@@ -127,6 +168,30 @@ class TileServer(object):
 
         coord = request_data.coord
         format = request_data.format
+
+        if self.store and layer_spec != 'all' and coord.zoom <= 20:
+            # we have a dynamic layer request
+            # in this case, we should try to fetch the data from the
+            # cache, and if present, prune the layers that aren't
+            # necessary from there.
+            tile_data = self.store.read_tile(coord, json_format)
+            if tile_data is not None:
+                # we were able to fetch the cached data
+                # we'll need to decode it into the expected
+                # feature_layers shape, prune the layers that aren't
+                # needed, and then format the data
+                feature_layers = decode_json_tile_for_layers(
+                    tile_data, layer_data)
+                bounds_merc = coord_to_mercator_bounds(coord)
+                bounds_wgs84 = (
+                    mercator_point_to_wgs84(bounds_merc[:2]) +
+                    mercator_point_to_wgs84(bounds_merc[2:4]))
+                tile_data_file = StringIO()
+                format.format_tile(tile_data_file, feature_layers, coord,
+                                   bounds_merc, bounds_wgs84)
+                tile_data = tile_data_file.getvalue()
+                response = self.create_response(request, tile_data, format)
+                return response
 
         feature_data = self.data_fetcher(coord, layer_data)
         formatted_tiles = process_coord(
@@ -152,12 +217,7 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
-        response = Response(
-            tile_data,
-            mimetype=format.mimetype,
-            headers=[('Access-Control-Allow-Origin', '*')])
-        response.add_etag()
-        response.make_conditional(request)
+        response = self.create_response(request, tile_data, format)
         return response
 
 
