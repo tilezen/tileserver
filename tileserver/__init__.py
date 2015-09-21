@@ -169,7 +169,7 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        if self.store and layer_data is not self.layer_config.all_layers:
+        if self.store and layer_spec != 'all' and coord.zoom <= 20:
             # we have a dynamic layer request
             # in this case, we should try to fetch the data from the
             # cache, and if present, prune the layers that aren't
