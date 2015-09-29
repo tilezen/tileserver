@@ -234,9 +234,10 @@ def async_store(store, tile_data, coord, format):
 def async_update_tiles_of_interest(redis_cache_index, coord):
     """update tiles of interest set"""
     try:
-        redis_cache_index.index_coord(coord)
+        if coord.zoom <= 20:
+            redis_cache_index.index_coord(coord)
         if coord.zoom > 18:
-            coord_at_z18 = coord.zoomTo(18)
+            coord_at_z18 = coord.zoomTo(18).container()
             redis_cache_index.index_coord(coord_at_z18)
     except:
         stacktrace = format_stacktrace_one_line()
