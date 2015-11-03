@@ -386,6 +386,7 @@ if __name__ == '__main__':
     tile_server.propagate_errors = True
 
     server_config = config['server']
-    run_simple(server_config['host'], server_config['port'], tile_server, threaded=server_config.get('threaded', False),
+    run_simple(server_config['host'], server_config['port'], tile_server,
+               threaded=server_config.get('threaded', False),
                use_debugger=server_config.get('debug', False),
                use_reloader=server_config.get('reload', False))
