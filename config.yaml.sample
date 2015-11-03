@@ -13,3 +13,4 @@ server:
   port: 8080
   debug: true
   reload: true
+  threaded: true
