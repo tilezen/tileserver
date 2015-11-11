@@ -8,8 +8,11 @@ from tilequeue.format import json_format
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
 from tilequeue.tile import coord_to_mercator_bounds
+from tilequeue.tile import pad_bounds_for_zoom
+from tilequeue.tile import reproject_lnglat_to_mercator
 from tilequeue.tile import serialize_coord
 from tilequeue.transform import mercator_point_to_wgs84
+from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
@@ -17,6 +20,7 @@ import json
 import psycopg2
 import random
 import shapely.geometry
+import shapely.ops
 import shapely.wkb
 import yaml
 
@@ -97,15 +101,20 @@ def decode_json_tile_for_layers(tile_data, layer_data):
         json_features = json_layer_data['features']
         for json_feature in json_features:
             json_geometry = json_feature['geometry']
-            shape = shapely.geometry.shape(json_geometry)
-            wkb = shapely.wkb.dumps(shape)
+            shape_lnglat = shapely.geometry.shape(json_geometry)
+            shape_mercator = shapely.ops.transform(
+                reproject_lnglat_to_mercator, shape_lnglat)
             properties = json_feature['properties']
             fid = None
-            feature = wkb, properties, fid
+            feature = shape_mercator, properties, fid
             features.append(feature)
+        # a further transform asks for a layer_datum is_clipped
+        # property where it applies clipping
+        # but this data coming from json is already clipped
         feature_layer = dict(
             name=layer_name,
             features=features,
+            layer_datum=dict(is_clipped=False),
         )
         feature_layers.append(feature_layer)
     return feature_layers
@@ -186,6 +195,14 @@ class TileServer(object):
                 bounds_wgs84 = (
                     mercator_point_to_wgs84(bounds_merc[:2]) +
                     mercator_point_to_wgs84(bounds_merc[2:4]))
+                padded_bounds_merc = pad_bounds_for_zoom(
+                    bounds_merc, coord.zoom)
+
+                scale = 4096
+                feature_layers = transform_feature_layers_shape(
+                    feature_layers, format, scale, bounds_merc,
+                    padded_bounds_merc, coord)
+
                 tile_data_file = StringIO()
                 format.format_tile(tile_data_file, feature_layers, coord,
                                    bounds_merc, bounds_wgs84)
