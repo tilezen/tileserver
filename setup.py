@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-version = '0.4.1'
+version = '0.5.0.dev0'
 
 setup(name='tileserver',
       version=version,
