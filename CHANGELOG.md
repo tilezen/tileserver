@@ -1,6 +1,10 @@
 CHANGELOG
 =========
 
+v0.4.1
+------
+* Allow threaded server configuration for local development
+
 v0.4.0
 ------
 * Do not insert coords greater than z20 into toi
