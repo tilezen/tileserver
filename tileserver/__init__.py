@@ -90,6 +90,17 @@ def parse_layer_spec(layer_spec, layer_config):
     return layer_data
 
 
+def ensure_utf8_properties(props):
+    new_props = {}
+    for k, v in props.items():
+        if isinstance(k, unicode):
+            k = k.encode('utf-8')
+        if isinstance(v, unicode):
+            v = v.encode('utf-8')
+        new_props[k] = v
+    return new_props
+
+
 def decode_json_tile_for_layers(tile_data, layer_data):
     layer_names_to_keep = set(ld['name'] for ld in layer_data)
     feature_layers = []
@@ -105,6 +116,10 @@ def decode_json_tile_for_layers(tile_data, layer_data):
             shape_mercator = shapely.ops.transform(
                 reproject_lnglat_to_mercator, shape_lnglat)
             properties = json_feature['properties']
+            # Ensure that we have strings for all key values and not
+            # unicode values. Some of the encoders except to be
+            # working with strings directly
+            properties = ensure_utf8_properties(properties)
             fid = None
             feature = shape_mercator, properties, fid
             features.append(feature)
