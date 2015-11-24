@@ -1,6 +1,11 @@
 CHANGELOG
 =========
 
+v0.4.2
+------
+* Update implementation of processing cached tile from store
+* Ensure properties are strings from cached tile before re-formatting
+
 v0.4.1
 ------
 * Allow threaded server configuration for local development
