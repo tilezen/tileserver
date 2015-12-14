@@ -258,10 +258,28 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
-        # select the data that the user actually asked for from the JSON/all
-        # tile that we just created.
-        tile_data = select_layers_from_tile(tile_data_all, layer_data, coord,
-            format)
+        if layer_spec == 'all':
+            if format == json_format:
+                # already done all the work, just need to return the tile to
+                # the client.
+                tile_data = tile_data_all
+
+            else:
+                # just need to format the data differently
+                tile_data = select_layers_from_tile(
+                    tile_data_all, self.layer_config.all_layers, coord, format)
+
+                # note that we want to store the data too, as this means that
+                # future requests can be serviced directly from the store.
+                if self.store and coord.zoom <= 20:
+                    self.io_pool.apply_async(
+                        async_store, (self.store, tile_data, coord, format))
+
+        else:
+            # select the data that the user actually asked for from the JSON/all
+            # tile that we just created.
+            tile_data = select_layers_from_tile(
+                tile_data_all, layer_data, coord, format)
 
         response = self.create_response(request, tile_data, format)
         return response
