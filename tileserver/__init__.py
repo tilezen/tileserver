@@ -135,6 +135,33 @@ def decode_json_tile_for_layers(tile_data, layer_data):
     return feature_layers
 
 
+def reformat_selected_layers(json_tile_data, layer_data, coord, format):
+    """
+    Reformats the selected (subset of) layers from a JSON tile containing all
+    layers. We store "tiles of record" containing all layers as JSON, and this
+    function does most of the work of reading that, pruning the layers which
+    aren't needed and reformatting it to the desired output format.
+    """
+
+    feature_layers = decode_json_tile_for_layers(json_tile_data, layer_data)
+    bounds_merc = coord_to_mercator_bounds(coord)
+    bounds_wgs84 = (
+        mercator_point_to_wgs84(bounds_merc[:2]) +
+        mercator_point_to_wgs84(bounds_merc[2:4]))
+    padded_bounds_merc = pad_bounds_for_zoom(bounds_merc, coord.zoom)
+
+    scale = 4096
+    feature_layers = transform_feature_layers_shape(
+        feature_layers, format, scale, bounds_merc,
+        padded_bounds_merc, coord)
+
+    tile_data_file = StringIO()
+    format.format_tile(tile_data_file, feature_layers, coord,
+                       bounds_merc, bounds_wgs84)
+    tile_data = tile_data_file.getvalue()
+    return tile_data
+
+
 class TileServer(object):
 
     # whether to re-raise errors on request handling
@@ -193,61 +220,70 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        if self.store and layer_spec != 'all' and coord.zoom <= 20:
+        if self.store and coord.zoom <= 20:
             # we have a dynamic layer request
             # in this case, we should try to fetch the data from the
             # cache, and if present, prune the layers that aren't
             # necessary from there.
             tile_data = self.store.read_tile(coord, json_format)
             if tile_data is not None:
-                # we were able to fetch the cached data
-                # we'll need to decode it into the expected
-                # feature_layers shape, prune the layers that aren't
-                # needed, and then format the data
-                feature_layers = decode_json_tile_for_layers(
-                    tile_data, layer_data)
-                bounds_merc = coord_to_mercator_bounds(coord)
-                bounds_wgs84 = (
-                    mercator_point_to_wgs84(bounds_merc[:2]) +
-                    mercator_point_to_wgs84(bounds_merc[2:4]))
-                padded_bounds_merc = pad_bounds_for_zoom(
-                    bounds_merc, coord.zoom)
+                tile_data = reformat_selected_layers(tile_data, layer_data,
+                        coord, format)
+                return self.create_response(request, tile_data, format)
 
-                scale = 4096
-                feature_layers = transform_feature_layers_shape(
-                    feature_layers, format, scale, bounds_merc,
-                    padded_bounds_merc, coord)
+        # fetch data for all layers, even if the request was for a partial set.
+        # this ensures that we can always store the result, allowing for reuse,
+        # but also that any post-processing functions which might have
+        # dependencies on multiple layers will still work properly (e.g:
+        # buildings or roads layer being cut against landuse).
+        feature_data_all = self.data_fetcher(coord, self.layer_config.all_layers)
 
-                tile_data_file = StringIO()
-                format.format_tile(tile_data_file, feature_layers, coord,
-                                   bounds_merc, bounds_wgs84)
-                tile_data = tile_data_file.getvalue()
-                response = self.create_response(request, tile_data, format)
-                return response
-
-        feature_data = self.data_fetcher(coord, layer_data)
-        formatted_tiles = process_coord(
+        formatted_tiles_all = process_coord(
             coord,
-            feature_data['feature_layers'],
+            feature_data_all['feature_layers'],
             self.post_process_data,
-            [format],
-            feature_data['unpadded_bounds'],
-            feature_data['padded_bounds'],
+            [json_format],
+            feature_data_all['unpadded_bounds'],
+            feature_data_all['padded_bounds'],
             [])
-        assert len(formatted_tiles) == 1, \
-            'unexpected number of tiles: %d' % len(formatted_tiles)
-        formatted_tile = formatted_tiles[0]
-        tile_data = formatted_tile['tile']
+        assert len(formatted_tiles_all) == 1, \
+            'unexpected number of tiles: %d' % len(formatted_tiles_all)
+        formatted_tile_all = formatted_tiles_all[0]
+        tile_data_all = formatted_tile_all['tile']
 
-        # we only want to store requests for the all layer
-        if self.store and layer_spec == 'all' and coord.zoom <= 20:
+        # store tile with data for all layers to the cache, so that we can read
+        # it all back for the dynamic layer request above.
+        if self.store and coord.zoom <= 20:
             self.io_pool.apply_async(
-                async_store, (self.store, tile_data, coord, format))
+                async_store, (self.store, tile_data_all, coord, json_format))
 
         # update the tiles of interest set with the new coordinate
         if self.redis_cache_index:
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
+
+        if layer_spec == 'all':
+            if format == json_format:
+                # already done all the work, just need to return the tile to
+                # the client.
+                tile_data = tile_data_all
+
+            else:
+                # just need to format the data differently
+                tile_data = reformat_selected_layers(
+                    tile_data_all, self.layer_config.all_layers, coord, format)
+
+                # note that we want to store the data too, as this means that
+                # future requests can be serviced directly from the store.
+                if self.store and coord.zoom <= 20:
+                    self.io_pool.apply_async(
+                        async_store, (self.store, tile_data, coord, format))
+
+        else:
+            # select the data that the user actually asked for from the JSON/all
+            # tile that we just created.
+            tile_data = reformat_selected_layers(
+                tile_data_all, layer_data, coord, format)
 
         response = self.create_response(request, tile_data, format)
         return response
