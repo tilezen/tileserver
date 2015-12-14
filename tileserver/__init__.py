@@ -143,7 +143,7 @@ def reformat_selected_layers(json_tile_data, layer_data, coord, format):
     aren't needed and reformatting it to the desired output format.
     """
 
-    feature_layers = decode_json_tile_for_layers(tile_data, layer_data)
+    feature_layers = decode_json_tile_for_layers(json_tile_data, layer_data)
     bounds_merc = coord_to_mercator_bounds(coord)
     bounds_wgs84 = (
         mercator_point_to_wgs84(bounds_merc[:2]) +
