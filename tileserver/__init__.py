@@ -135,10 +135,14 @@ def decode_json_tile_for_layers(tile_data, layer_data):
     return feature_layers
 
 
-def select_layers_from_tile(tile_data, layer_data, coord, format):
-    # we were able to fetch the cached data we'll need to decode it into the
-    # expected feature_layers shape, prune the layers that aren't needed, and
-    # then format the data
+def reformat_selected_layers(json_tile_data, layer_data, coord, format):
+    """
+    Reformats the selected (subset of) layers from a JSON tile containing all
+    layers. We store "tiles of record" containing all layers as JSON, and this
+    function does most of the work of reading that, pruning the layers which
+    aren't needed and reformatting it to the desired output format.
+    """
+
     feature_layers = decode_json_tile_for_layers(tile_data, layer_data)
     bounds_merc = coord_to_mercator_bounds(coord)
     bounds_wgs84 = (
@@ -223,7 +227,7 @@ class TileServer(object):
             # necessary from there.
             tile_data = self.store.read_tile(coord, json_format)
             if tile_data is not None:
-                tile_data = select_layers_from_tile(tile_data, layer_data,
+                tile_data = reformat_selected_layers(tile_data, layer_data,
                         coord, format)
                 return self.create_response(request, tile_data, format)
 
@@ -266,7 +270,7 @@ class TileServer(object):
 
             else:
                 # just need to format the data differently
-                tile_data = select_layers_from_tile(
+                tile_data = reformat_selected_layers(
                     tile_data_all, self.layer_config.all_layers, coord, format)
 
                 # note that we want to store the data too, as this means that
@@ -278,7 +282,7 @@ class TileServer(object):
         else:
             # select the data that the user actually asked for from the JSON/all
             # tile that we just created.
-            tile_data = select_layers_from_tile(
+            tile_data = reformat_selected_layers(
                 tile_data_all, layer_data, coord, format)
 
         response = self.create_response(request, tile_data, format)
