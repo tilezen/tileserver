@@ -1,6 +1,11 @@
 CHANGELOG
 =========
 
+v0.5.0
+------
+* Update to support date- and hash-prefixed stores and S3 buckets.
+* Normalise layer creation so that tiles are only generated with a full set of layers. These will be stored and any subset of layers that the client requested will be filtered from it. This improves consistency when many layers have interdependent post-processing steps.
+
 v0.4.2
 ------
 * Update implementation of processing cached tile from store
