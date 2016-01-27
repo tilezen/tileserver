@@ -231,6 +231,11 @@ class TileServer(object):
                         coord, format)
                 return self.create_response(request, tile_data, format)
 
+        # update the tiles of interest set with the coordinate
+        if self.redis_cache_index:
+            self.io_pool.apply_async(async_update_tiles_of_interest,
+                                     (self.redis_cache_index, coord))
+
         # fetch data for all layers, even if the request was for a partial set.
         # this ensures that we can always store the result, allowing for reuse,
         # but also that any post-processing functions which might have
@@ -256,11 +261,6 @@ class TileServer(object):
         if self.store and coord.zoom <= 20:
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data_all, coord, json_format))
-
-        # update the tiles of interest set with the new coordinate
-        if self.redis_cache_index:
-            self.io_pool.apply_async(async_update_tiles_of_interest,
-                                     (self.redis_cache_index, coord))
 
         if layer_spec == 'all':
             if format == json_format:
