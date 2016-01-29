@@ -2,6 +2,7 @@ from collections import namedtuple
 from cStringIO import StringIO
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
+from tilequeue.command import make_queue
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format
@@ -169,13 +170,15 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, data_fetcher, post_process_data,
-                 io_pool, store, redis_cache_index, health_checker=None):
+                 io_pool, store, redis_cache_index, sqs_queue,
+                 health_checker=None):
         self.layer_config = layer_config
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
         self.io_pool = io_pool
         self.store = store
         self.redis_cache_index = redis_cache_index
+        self.sqs_queue = sqs_queue
         self.health_checker = health_checker
 
     def __call__(self, environ, start_response):
@@ -221,14 +224,36 @@ class TileServer(object):
         format = request_data.format
 
         if self.store and coord.zoom <= 20:
-            # we have a dynamic layer request
-            # in this case, we should try to fetch the data from the
-            # cache, and if present, prune the layers that aren't
-            # necessary from there.
+            # we either have a dynamic layer request, or it's a
+            # request for a new tile that is not currently in the
+            # tiles of interest, or it's for a request that's in the
+            # tiles of interest that hasn't been generated, possibly
+            # because a new prefix is used and all tiles haven't been
+            # generated yet before making the switch
+
+            # in any case, it makes sense to try and fetch the json
+            # format from the store first
             tile_data = self.store.read_tile(coord, json_format)
             if tile_data is not None:
+                # the json format exists in the store
+                # we'll use it to generate the response
                 tile_data = reformat_selected_layers(tile_data, layer_data,
-                        coord, format)
+                                                     coord, format)
+                if layer_spec == 'all':
+                    # for the all layer, since the json format
+                    # existed, we should also save the requested
+                    # format too to allow the caches to serve it
+                    # directly in subsequent requests
+                    self.io_pool.apply_async(
+                        async_store, (self.store, tile_data, coord, format))
+
+                    # additionally, we'll want to enqueue the tile
+                    # onto sqs to ensure that the other formats get
+                    # processed too.
+                    if self.sqs_queue:
+                        self.io_pool.apply_async(
+                            async_enqueue, (self.sqs_queue, coord,))
+
                 return self.create_response(request, tile_data, format)
 
         # update the tiles of interest set with the coordinate
@@ -273,11 +298,18 @@ class TileServer(object):
                 tile_data = reformat_selected_layers(
                     tile_data_all, self.layer_config.all_layers, coord, format)
 
-                # note that we want to store the data too, as this means that
-                # future requests can be serviced directly from the store.
+                # note that we want to store the formatted data too,
+                # as this means that future requests can be serviced
+                # directly from the store.
                 if self.store and coord.zoom <= 20:
                     self.io_pool.apply_async(
                         async_store, (self.store, tile_data, coord, format))
+
+            # since we're a request for all, enqueue the coordinate to
+            # ensure other formats get processed
+            if self.sqs_queue and coord.zoom <= 20:
+                self.io_pool.apply_async(
+                    async_enqueue, (self.sqs_queue, coord,))
 
         else:
             # select the data that the user actually asked for from the JSON/all
@@ -320,6 +352,20 @@ def async_update_tiles_of_interest(redis_cache_index, coord):
     except:
         stacktrace = format_stacktrace_one_line()
         print 'Error updating tiles of interest for coord %s: %s\n' % (
+            serialize_coord(coord), stacktrace)
+
+
+def async_enqueue(sqs_queue, coord):
+    """enqueue a coordinate for offline processing
+
+    This ensures that when we receive a request for a tile format that
+    hasn't been generated yet, we create the other formats eventually.
+    """
+    try:
+        sqs_queue.enqueue(coord)
+    except:
+        stacktrace = format_stacktrace_one_line()
+        print 'Error enqueueing coord %s: %s\n' % (
             serialize_coord(coord), stacktrace)
 
 
@@ -410,6 +456,7 @@ def create_tileserver_from_config(config):
             store = make_store(store_type, store_name, store_config)
 
     redis_cache_index = None
+    sqs_queue = None
     redis_config = config.get('redis')
     if redis_config:
         from redis import StrictRedis
@@ -420,6 +467,12 @@ def create_tileserver_from_config(config):
         redis_client = StrictRedis(redis_host, redis_port, redis_db)
         redis_cache_index = RedisCacheIndex(redis_client)
 
+        queue_config = config.get('queue')
+        if queue_config:
+            queue_type = queue_config.get('type')
+            queue_name = queue_config.get('name')
+            sqs_queue = make_queue(queue_type, queue_name, redis_client)
+
     health_checker = None
     health_check_config = config.get('health')
     if health_check_config:
@@ -428,7 +481,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, data_fetcher, post_process_data, io_pool, store,
-        redis_cache_index, health_checker)
+        redis_cache_index, sqs_queue, health_checker)
     return tile_server
 
 
