@@ -292,6 +292,11 @@ class TileServer(object):
             self.io_pool.apply_async(
                 async_store, (self.store, tile_data_all, coord, json_format))
 
+        # enqueue the coordinate to ensure other formats get processed
+        if self.sqs_queue and coord.zoom <= 20:
+            self.io_pool.apply_async(
+                async_enqueue, (self.sqs_queue, coord,))
+
         if layer_spec == 'all':
             if format == json_format:
                 # already done all the work, just need to return the tile to
@@ -309,12 +314,6 @@ class TileServer(object):
                 if self.store and coord.zoom <= 20:
                     self.io_pool.apply_async(
                         async_store, (self.store, tile_data, coord, format))
-
-            # since we're a request for all, enqueue the coordinate to
-            # ensure other formats get processed
-            if self.sqs_queue and coord.zoom <= 20:
-                self.io_pool.apply_async(
-                    async_enqueue, (self.sqs_queue, coord,))
 
         else:
             # select the data that the user actually asked for from the JSON/all
