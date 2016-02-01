@@ -244,8 +244,13 @@ class TileServer(object):
                     # existed, we should also save the requested
                     # format too to allow the caches to serve it
                     # directly in subsequent requests
-                    self.io_pool.apply_async(
-                        async_store, (self.store, tile_data, coord, format))
+                    # we'll guard against re-saving json onto itself
+                    # though, which may be possible through a race
+                    # condition
+                    if format != json_format:
+                        self.io_pool.apply_async(
+                            async_store, (self.store, tile_data, coord,
+                                          format))
 
                     # additionally, we'll want to enqueue the tile
                     # onto sqs to ensure that the other formats get
