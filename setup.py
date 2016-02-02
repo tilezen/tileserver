@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-version = '0.5.0'
+version = '0.5.1'
 
 setup(name='tileserver',
       version=version,
@@ -19,7 +19,7 @@ setup(name='tileserver',
       zip_safe=False,
       install_requires=[
           'PyYAML',
-          'tilequeue',
+          'tilequeue >= 0.7.1',
           'TileStache',
           'werkzeug',
       ],
