@@ -233,7 +233,7 @@ class TileServer(object):
 
             # in any case, it makes sense to try and fetch the json
             # format from the store first
-            tile_data = self.store.read_tile(coord, json_format)
+            tile_data = self.store.read_tile(coord, json_format, 'all')
             if tile_data is not None:
                 # the json format exists in the store
                 # we'll use it to generate the response
@@ -250,7 +250,7 @@ class TileServer(object):
                     if format != json_format:
                         self.io_pool.apply_async(
                             async_store, (self.store, tile_data, coord,
-                                          format))
+                                          format, 'all'))
 
                     # additionally, we'll want to enqueue the tile
                     # onto sqs to ensure that the other formats get
@@ -280,7 +280,7 @@ class TileServer(object):
             [json_format],
             feature_data_all['unpadded_bounds'],
             feature_data_all['padded_bounds'],
-            [])
+            [], [])
         assert len(formatted_tiles_all) == 1, \
             'unexpected number of tiles: %d' % len(formatted_tiles_all)
         formatted_tile_all = formatted_tiles_all[0]
@@ -290,7 +290,8 @@ class TileServer(object):
         # it all back for the dynamic layer request above.
         if self.store and coord.zoom <= 20:
             self.io_pool.apply_async(
-                async_store, (self.store, tile_data_all, coord, json_format))
+                async_store, (self.store, tile_data_all, coord, json_format,
+                              'all'))
 
         # enqueue the coordinate to ensure other formats get processed
         if self.sqs_queue and coord.zoom <= 20:
@@ -313,7 +314,8 @@ class TileServer(object):
                 # directly from the store.
                 if self.store and coord.zoom <= 20:
                     self.io_pool.apply_async(
-                        async_store, (self.store, tile_data, coord, format))
+                        async_store, (
+                            self.store, tile_data, coord, format, 'all'))
 
         else:
             # select the data that the user actually asked for from the JSON/all
@@ -325,10 +327,10 @@ class TileServer(object):
         return response
 
 
-def async_store(store, tile_data, coord, format):
+def async_store(store, tile_data, coord, format, layer):
     """update cache store with tile_data"""
     try:
-        store.write_tile(tile_data, coord, format)
+        store.write_tile(tile_data, coord, format, layer)
     except:
         stacktrace = format_stacktrace_one_line()
         print 'Error storing coord %s with format %s: %s' % (
