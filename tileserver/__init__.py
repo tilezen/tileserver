@@ -182,6 +182,7 @@ class TileServer(object):
         self.sqs_queue = sqs_queue
         self.health_checker = health_checker
         self.config_file_path = config_file_path
+        self.cache = dict()
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -282,7 +283,7 @@ class TileServer(object):
             [json_format],
             feature_data_all['unpadded_bounds'],
             feature_data_all['padded_bounds'],
-            [], [], self.config_file_path)
+            [], [], self.config_file_path, self.cache)
         assert len(formatted_tiles_all) == 1, \
             'unexpected number of tiles: %d' % len(formatted_tiles_all)
         formatted_tile_all = formatted_tiles_all[0]
