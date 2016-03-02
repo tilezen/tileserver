@@ -283,7 +283,7 @@ class TileServer(object):
             [json_format],
             feature_data_all['unpadded_bounds'],
             feature_data_all['padded_bounds'],
-            [], [], self.config_file_path, self.cache)
+            [], [])
         assert len(formatted_tiles_all) == 1, \
             'unexpected number of tiles: %d' % len(formatted_tiles_all)
         formatted_tile_all = formatted_tiles_all[0]
@@ -446,7 +446,8 @@ def create_tileserver_from_config(config):
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
     all_layer_data, layer_data, post_process_data = parse_layer_data(
-        queries_config, template_path, reload_templates)
+        queries_config, template_path, reload_templates,
+        os.path.dirname(queries_config_path))
     all_layer_names = [x['name'] for x in all_layer_data]
     layer_config = LayerConfig(all_layer_names, layer_data)
     config_file_path = os.path.dirname(queries_config_path)
