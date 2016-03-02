@@ -172,7 +172,7 @@ class TileServer(object):
 
     def __init__(self, layer_config, data_fetcher, post_process_data,
                  io_pool, store, redis_cache_index, sqs_queue,
-                 config_file_path, health_checker=None):
+                 health_checker=None):
         self.layer_config = layer_config
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
@@ -181,8 +181,6 @@ class TileServer(object):
         self.redis_cache_index = redis_cache_index
         self.sqs_queue = sqs_queue
         self.health_checker = health_checker
-        self.config_file_path = config_file_path
-        self.cache = dict()
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -450,7 +448,6 @@ def create_tileserver_from_config(config):
         os.path.dirname(queries_config_path))
     all_layer_names = [x['name'] for x in all_layer_data]
     layer_config = LayerConfig(all_layer_names, layer_data)
-    config_file_path = os.path.dirname(queries_config_path)
 
     conn_info = config['postgresql']
     n_conn = len(layer_data)
@@ -492,7 +489,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, data_fetcher, post_process_data, io_pool, store,
-        redis_cache_index, sqs_queue, config_file_path, health_checker)
+        redis_cache_index, sqs_queue, health_checker)
     return tile_server
 
 
