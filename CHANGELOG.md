@@ -5,6 +5,7 @@ v0.6.0
 ------
 * Update calls for layer specific store changes
 * Support post process functions
+* Metatile at z16
 
 v0.5.1
 ------
