@@ -39,7 +39,7 @@ def coord_is_valid(coord):
 RequestData = namedtuple('RequestData', 'layer_spec coord format')
 
 
-def parse_request_path(path):
+def parse_request_path(path, extensions_to_handle):
     """given a path, parse the underlying layer, coordinate, and format"""
     parts = path.split('/')
     if len(parts) != 5:
@@ -49,9 +49,10 @@ def parse_request_path(path):
     if len(row_fields) != 2:
         return None
     row_str, ext = row_fields
-    format = extension_to_format.get(ext)
-    if format is None:
+    if ext not in extensions_to_handle:
         return None
+    format = extension_to_format.get(ext)
+    assert format, 'Unknown extension %s' % ext
     try:
         zoom = int(zoom_str)
         column = int(column_str)
@@ -170,10 +171,11 @@ class TileServer(object):
     # we want this during development, but not during production
     propagate_errors = False
 
-    def __init__(self, layer_config, data_fetcher, post_process_data,
-                 io_pool, store, redis_cache_index, sqs_queue,
-                 health_checker=None):
+    def __init__(self, layer_config, extensions, data_fetcher,
+                 post_process_data, io_pool, store, redis_cache_index,
+                 sqs_queue, health_checker=None):
         self.layer_config = layer_config
+        self.extensions = extensions
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
         self.io_pool = io_pool
@@ -212,7 +214,7 @@ class TileServer(object):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
-        request_data = parse_request_path(request.path)
+        request_data = parse_request_path(request.path, self.extensions)
         if request_data is None:
             return self.generate_404()
         layer_spec = request_data.layer_spec
@@ -441,6 +443,16 @@ def create_tileserver_from_config(config):
     template_path = query_config['template-path']
     reload_templates = query_config['reload-templates']
 
+    extensions_config = config.get('formats')
+    extensions = set()
+    if extensions_config:
+        for extension in extensions_config:
+            assert extension in extension_to_format, \
+                'Unknown format: %s' % extension
+            extensions.add(extension)
+    else:
+        extensions = set(['json', 'topojson', 'mvt'])
+
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
     all_layer_data, layer_data, post_process_data = parse_layer_data(
@@ -488,8 +500,8 @@ def create_tileserver_from_config(config):
         health_checker = HealthChecker(health_check_url, conn_info)
 
     tile_server = TileServer(
-        layer_config, data_fetcher, post_process_data, io_pool, store,
-        redis_cache_index, sqs_queue, health_checker)
+        layer_config, extensions, data_fetcher, post_process_data, io_pool,
+        store, redis_cache_index, sqs_queue, health_checker)
     return tile_server
 
 
