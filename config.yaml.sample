@@ -8,6 +8,7 @@ queries:
   config: ../vector-datasource/queries.yaml
   template-path: ../vector-datasource/queries
   reload-templates: true
+formats: [json, topojson, mvt]
 server:
   host: localhost
   port: 8080
