@@ -1,6 +1,10 @@
 CHANGELOG
 =========
 
+v0.6.1
+------
+* Allow configuration of formats to handle
+
 v0.6.0
 ------
 * Update calls for layer specific store changes
