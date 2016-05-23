@@ -172,12 +172,13 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, extensions, data_fetcher,
-                 post_process_data, io_pool, store, redis_cache_index,
-                 sqs_queue, health_checker=None):
+                 post_process_data, area_threshold, io_pool, store,
+                 redis_cache_index, sqs_queue, health_checker=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
+        self.area_threshold = area_threshold
         self.io_pool = io_pool
         self.store = store
         self.redis_cache_index = redis_cache_index
@@ -274,7 +275,8 @@ class TileServer(object):
         # but also that any post-processing functions which might have
         # dependencies on multiple layers will still work properly (e.g:
         # buildings or roads layer being cut against landuse).
-        feature_data_all = self.data_fetcher(coord, self.layer_config.all_layers)
+        feature_data_all = self.data_fetcher(
+            coord, self.layer_config.all_layers)
 
         formatted_tiles_all = process_coord(
             coord,
@@ -283,7 +285,10 @@ class TileServer(object):
             [json_format],
             feature_data_all['unpadded_bounds'],
             feature_data_all['padded_bounds'],
-            [], [])
+            [],  # cut_coords
+            [],  # layers_to_format
+            self.area_threshold,
+        )
         assert len(formatted_tiles_all) == 1, \
             'unexpected number of tiles: %d' % len(formatted_tiles_all)
         formatted_tile_all = formatted_tiles_all[0]
@@ -455,9 +460,9 @@ def create_tileserver_from_config(config):
 
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
-    all_layer_data, layer_data, post_process_data = parse_layer_data(
-        queries_config, template_path, reload_templates,
-        os.path.dirname(queries_config_path))
+    all_layer_data, layer_data, post_process_data, area_threshold = (
+        parse_layer_data(queries_config, template_path, reload_templates,
+                         os.path.dirname(queries_config_path)))
     all_layer_names = [x['name'] for x in all_layer_data]
     layer_config = LayerConfig(all_layer_names, layer_data)
 
@@ -500,8 +505,9 @@ def create_tileserver_from_config(config):
         health_checker = HealthChecker(health_check_url, conn_info)
 
     tile_server = TileServer(
-        layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, sqs_queue, health_checker)
+        layer_config, extensions, data_fetcher, post_process_data,
+        area_threshold, io_pool, store, redis_cache_index, sqs_queue,
+        health_checker)
     return tile_server
 
 
