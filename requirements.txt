@@ -3,7 +3,6 @@ boto==2.33.0
 hiredis==0.1.5
 mapbox-vector-tile==0.3.0
 ModestMaps==1.4.6
-Pillow==2.6.1
 protobuf==2.6.0
 psycopg2==2.5.4
 pycountry==1.20
@@ -14,5 +13,4 @@ simplejson==3.6.4
 StreetNames==0.1.5
 Werkzeug==0.9.6
 wsgiref==0.1.2
-git+https://github.com/mapzen/TileStache@integration-1#egg=TileStache
 git+https://github.com/mapzen/tilequeue#egg=tilequeue
