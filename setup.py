@@ -20,7 +20,6 @@ setup(name='tileserver',
       install_requires=[
           'PyYAML',
           'tilequeue >= 0.7.1',
-          'TileStache',
           'werkzeug',
       ],
       entry_points="""
