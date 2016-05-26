@@ -12,7 +12,7 @@ from tilequeue.tile import coord_to_mercator_bounds
 from tilequeue.tile import pad_bounds_for_zoom
 from tilequeue.tile import reproject_lnglat_to_mercator
 from tilequeue.tile import serialize_coord
-from tilequeue.transform import mercator_point_to_wgs84
+from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
 from werkzeug.wrappers import Request
@@ -148,9 +148,9 @@ def reformat_selected_layers(json_tile_data, layer_data, coord, format):
 
     feature_layers = decode_json_tile_for_layers(json_tile_data, layer_data)
     bounds_merc = coord_to_mercator_bounds(coord)
-    bounds_wgs84 = (
-        mercator_point_to_wgs84(bounds_merc[:2]) +
-        mercator_point_to_wgs84(bounds_merc[2:4]))
+    bounds_lnglat = (
+        mercator_point_to_lnglat(bounds_merc[0], bounds_merc[1]) +
+        mercator_point_to_lnglat(bounds_merc[2], bounds_merc[3]))
     padded_bounds_merc = pad_bounds_for_zoom(bounds_merc, coord.zoom)
 
     scale = 4096
@@ -160,7 +160,7 @@ def reformat_selected_layers(json_tile_data, layer_data, coord, format):
 
     tile_data_file = StringIO()
     format.format_tile(tile_data_file, feature_layers, coord,
-                       bounds_merc, bounds_wgs84)
+                       bounds_merc, bounds_lnglat)
     tile_data = tile_data_file.getvalue()
     return tile_data
 
