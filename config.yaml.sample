@@ -9,6 +9,7 @@ queries:
   template-path: ../vector-datasource/queries
   reload-templates: true
 formats: [json, topojson, mvt]
+buffer: {}
 server:
   host: localhost
   port: 8080
