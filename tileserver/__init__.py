@@ -6,9 +6,9 @@ from tilequeue.command import make_queue
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format
-from tilequeue.process import _find_meters_per_pixel
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
+from tilequeue.tile import calc_meters_per_pixel_dim
 from tilequeue.tile import coord_to_mercator_bounds
 from tilequeue.tile import reproject_lnglat_to_mercator
 from tilequeue.tile import serialize_coord
@@ -153,12 +153,12 @@ def reformat_selected_layers(
         mercator_point_to_lnglat(bounds_merc[0], bounds_merc[1]) +
         mercator_point_to_lnglat(bounds_merc[2], bounds_merc[3]))
 
-    meters_per_pixel = _find_meters_per_pixel(coord.zoom)
+    meters_per_pixel_dim = calc_meters_per_pixel_dim(coord.zoom)
 
     scale = 4096
     feature_layers = transform_feature_layers_shape(
         feature_layers, format, scale, bounds_merc,
-        coord, meters_per_pixel, buffer_cfg)
+        coord, meters_per_pixel_dim, buffer_cfg)
 
     tile_data_file = StringIO()
     format.format_tile(tile_data_file, feature_layers, coord,
