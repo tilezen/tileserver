@@ -6,10 +6,10 @@ from tilequeue.command import make_queue
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format
+from tilequeue.process import _find_meters_per_pixel
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
 from tilequeue.tile import coord_to_mercator_bounds
-from tilequeue.tile import pad_bounds_for_zoom
 from tilequeue.tile import reproject_lnglat_to_mercator
 from tilequeue.tile import serialize_coord
 from tilequeue.transform import mercator_point_to_lnglat
@@ -138,7 +138,8 @@ def decode_json_tile_for_layers(tile_data, layer_data):
     return feature_layers
 
 
-def reformat_selected_layers(json_tile_data, layer_data, coord, format):
+def reformat_selected_layers(
+        json_tile_data, layer_data, coord, format, buffer_cfg):
     """
     Reformats the selected (subset of) layers from a JSON tile containing all
     layers. We store "tiles of record" containing all layers as JSON, and this
@@ -151,12 +152,13 @@ def reformat_selected_layers(json_tile_data, layer_data, coord, format):
     bounds_lnglat = (
         mercator_point_to_lnglat(bounds_merc[0], bounds_merc[1]) +
         mercator_point_to_lnglat(bounds_merc[2], bounds_merc[3]))
-    padded_bounds_merc = pad_bounds_for_zoom(bounds_merc, coord.zoom)
+
+    meters_per_pixel = _find_meters_per_pixel(coord.zoom)
 
     scale = 4096
     feature_layers = transform_feature_layers_shape(
         feature_layers, format, scale, bounds_merc,
-        padded_bounds_merc, coord)
+        coord, meters_per_pixel, buffer_cfg)
 
     tile_data_file = StringIO()
     format.format_tile(tile_data_file, feature_layers, coord,
@@ -173,7 +175,7 @@ class TileServer(object):
 
     def __init__(self, layer_config, extensions, data_fetcher,
                  post_process_data, io_pool, store, redis_cache_index,
-                 sqs_queue, health_checker=None):
+                 sqs_queue, buffer_cfg, health_checker=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -182,6 +184,7 @@ class TileServer(object):
         self.store = store
         self.redis_cache_index = redis_cache_index
         self.sqs_queue = sqs_queue
+        self.buffer_cfg = buffer_cfg
         self.health_checker = health_checker
 
     def __call__(self, environ, start_response):
@@ -240,8 +243,8 @@ class TileServer(object):
             if tile_data is not None:
                 # the json format exists in the store
                 # we'll use it to generate the response
-                tile_data = reformat_selected_layers(tile_data, layer_data,
-                                                     coord, format)
+                tile_data = reformat_selected_layers(
+                    tile_data, layer_data, coord, format, self.buffer_cfg)
                 if layer_spec == 'all':
                     # for the all layer, since the json format
                     # existed, we should also save the requested
@@ -274,7 +277,8 @@ class TileServer(object):
         # but also that any post-processing functions which might have
         # dependencies on multiple layers will still work properly (e.g:
         # buildings or roads layer being cut against landuse).
-        feature_data_all = self.data_fetcher(coord, self.layer_config.all_layers)
+        feature_data_all = self.data_fetcher(
+            coord, self.layer_config.all_layers)
 
         formatted_tiles_all = process_coord(
             coord,
@@ -282,8 +286,7 @@ class TileServer(object):
             self.post_process_data,
             [json_format],
             feature_data_all['unpadded_bounds'],
-            feature_data_all['padded_bounds'],
-            [], [])
+            [], [], self.buffer_cfg)
         assert len(formatted_tiles_all) == 1, \
             'unexpected number of tiles: %d' % len(formatted_tiles_all)
         formatted_tile_all = formatted_tiles_all[0]
@@ -310,7 +313,8 @@ class TileServer(object):
             else:
                 # just need to format the data differently
                 tile_data = reformat_selected_layers(
-                    tile_data_all, self.layer_config.all_layers, coord, format)
+                    tile_data_all, self.layer_config.all_layers, coord, format,
+                    self.buffer_cfg)
 
                 # note that we want to store the formatted data too,
                 # as this means that future requests can be serviced
@@ -324,7 +328,7 @@ class TileServer(object):
             # select the data that the user actually asked for from the JSON/all
             # tile that we just created.
             tile_data = reformat_selected_layers(
-                tile_data_all, layer_data, coord, format)
+                tile_data_all, layer_data, coord, format, self.buffer_cfg)
 
         response = self.create_response(request, tile_data, format)
         return response
@@ -442,6 +446,7 @@ def create_tileserver_from_config(config):
     queries_config_path = query_config['config']
     template_path = query_config['template-path']
     reload_templates = query_config['reload-templates']
+    buffer_cfg = config.get('buffer', {})
 
     extensions_config = config.get('formats')
     extensions = set()
@@ -456,7 +461,7 @@ def create_tileserver_from_config(config):
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
     all_layer_data, layer_data, post_process_data = parse_layer_data(
-        queries_config, template_path, reload_templates,
+        queries_config, buffer_cfg, template_path, reload_templates,
         os.path.dirname(queries_config_path))
     all_layer_names = [x['name'] for x in all_layer_data]
     layer_config = LayerConfig(all_layer_names, layer_data)
@@ -501,7 +506,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, sqs_queue, health_checker)
+        store, redis_cache_index, sqs_queue, buffer_cfg, health_checker)
     return tile_server
 
 
