@@ -4,10 +4,11 @@ A lightweight tileserver to share code paths with tilequeue for tile generation.
 
 ## Installation
 
-First, install some dependencies:
+We recommend following the vector-datasource [installation instructions](https://github.com/tilezen/vector-datasource/wiki/Mapzen-Vector-Tile-Service).
 
-* `integration-1` branch of the `mapzen/TileStache` fork
-* latest tilequeue `master` branch
+There is a requirements file that can be used to install.
+
+    pip install -Ur requirements.txt
 
 Then:
 
