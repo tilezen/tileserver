@@ -16,3 +16,4 @@ server:
   debug: true
   reload: true
   threaded: true
+cors: false

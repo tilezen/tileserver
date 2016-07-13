@@ -175,7 +175,8 @@ class TileServer(object):
 
     def __init__(self, layer_config, extensions, data_fetcher,
                  post_process_data, io_pool, store, redis_cache_index,
-                 sqs_queue, buffer_cfg, health_checker=None):
+                 sqs_queue, buffer_cfg, health_checker=None,
+                 add_cors_headers=False):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -186,6 +187,7 @@ class TileServer(object):
         self.sqs_queue = sqs_queue
         self.buffer_cfg = buffer_cfg
         self.health_checker = health_checker
+        self.add_cors_headers = add_cors_headers
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -197,20 +199,26 @@ class TileServer(object):
             stacktrace = format_stacktrace_one_line()
             print 'Error handling request for %s: %s' % (
                 request.path, stacktrace)
-            response = Response(
-                'Internal Server Error', status=500, mimetype='text/plain')
+            response = self.create_response(
+                request, 500, 'Internal Server Error', 'text/plain')
         return response(environ, start_response)
 
-    def generate_404(self):
-        return Response('Not Found', status=404, mimetype='text/plain')
+    def generate_404(self, request):
+        return self.create_response(request, 404, 'Not Found', 'text/plain')
 
-    def create_response(self, request, tile_data, format):
-        response = Response(
-            tile_data,
-            mimetype=format.mimetype,
-            headers=[('Access-Control-Allow-Origin', '*')])
-        response.add_etag()
-        response.make_conditional(request)
+    def create_response(self, request, status, body, mimetype):
+        response_args = dict(
+            status=status,
+            mimetype=mimetype,
+        )
+        if self.add_cors_headers:
+            response_args['headers'] = [('Access-Control-Allow-Origin', '*')]
+        response = Response(body, **response_args)
+
+        if status == 200:
+            response.add_etag()
+            response.make_conditional(request)
+
         return response
 
     def handle_request(self, request):
@@ -219,12 +227,12 @@ class TileServer(object):
             return self.health_checker(request)
         request_data = parse_request_path(request.path, self.extensions)
         if request_data is None:
-            return self.generate_404()
+            return self.generate_404(request)
         layer_spec = request_data.layer_spec
         layer_data = parse_layer_spec(request_data.layer_spec,
                                       self.layer_config)
         if layer_data is None:
-            return self.generate_404()
+            return self.generate_404(request)
 
         coord = request_data.coord
         format = request_data.format
@@ -265,7 +273,8 @@ class TileServer(object):
                         self.io_pool.apply_async(
                             async_enqueue, (self.sqs_queue, coord,))
 
-                return self.create_response(request, tile_data, format)
+                return self.create_response(
+                    request, 200, tile_data, format.mimetype)
 
         # update the tiles of interest set with the coordinate
         if self.redis_cache_index:
@@ -330,7 +339,8 @@ class TileServer(object):
             tile_data = reformat_selected_layers(
                 tile_data_all, layer_data, coord, format, self.buffer_cfg)
 
-        response = self.create_response(request, tile_data, format)
+        response = self.create_response(
+            request, 200, tile_data, format.mimetype)
         return response
 
 
@@ -504,9 +514,12 @@ def create_tileserver_from_config(config):
         health_check_url = health_check_config['url']
         health_checker = HealthChecker(health_check_url, conn_info)
 
+    add_cors_headers = config.get('cors', False)
+
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, sqs_queue, buffer_cfg, health_checker)
+        store, redis_cache_index, sqs_queue, buffer_cfg, health_checker,
+        add_cors_headers)
     return tile_server
 
 
