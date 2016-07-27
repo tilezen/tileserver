@@ -1,6 +1,13 @@
 CHANGELOG
 =========
 
+v0.7.0
+------
+* Removed TileStache and Pillow dependencies
+* Updated other dependency versions
+* Update function calls to support latest tilequeue changes, including support for buffered MVT tile extents
+* Add cors config option
+
 v0.6.1
 ------
 * Allow configuration of formats to handle
