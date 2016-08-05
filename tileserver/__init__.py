@@ -289,7 +289,7 @@ class TileServer(object):
         feature_data_all = self.data_fetcher(
             coord, self.layer_config.all_layers)
 
-        formatted_tiles_all = process_coord(
+        formatted_tiles_all, extra_data = process_coord(
             coord,
             feature_data_all['feature_layers'],
             self.post_process_data,
