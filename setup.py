@@ -1,6 +1,8 @@
 from setuptools import setup, find_packages
 
-version = '0.8.0.dev0'
+version_path = os.path.join(os.path.dirname(__file__), 'VERSION')
+with open(version_path) as fh:
+    version = fh.read().strip()
 
 setup(name='tileserver',
       version=version,
