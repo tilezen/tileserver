@@ -16,4 +16,8 @@ server:
   debug: true
   reload: true
   threaded: true
-cors: false
+cors: true
+# cache tiles locally
+# store:
+#   type: directory
+#   name: tiles
