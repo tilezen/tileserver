@@ -1,3 +1,4 @@
+import os.path
 from setuptools import setup, find_packages
 
 version_path = os.path.join(os.path.dirname(__file__), 'VERSION')
