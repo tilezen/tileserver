@@ -16,6 +16,7 @@ queries:
   reload-templates: true
 
 # format extensions to support
+# buffered Mapbox Vector Tiles are also possible by specifying mvtb
 formats: [json, topojson, mvt]
 # buffer configuration, see tilequeue sample config for details
 buffer: {}
