@@ -1,6 +1,12 @@
 CHANGELOG
 =========
 
+v1.0.0
+------
+* Update process_cord function call to account for new return values (size logging).
+* Update the sample configuration to reflect new options.
+* Add pyclipper dependency to requirements.
+
 v0.7.0
 ------
 * Removed TileStache and Pillow dependencies
