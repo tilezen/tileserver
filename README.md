@@ -1,6 +1,6 @@
 # tileserver
 
-A lightweight tileserver to share code paths with tilequeue for tile generation.
+A lightweight tileserver to share code paths with [tilequeue](https://github.com/tilezen/tilequeue) for tile generation.
 
 ## Installation
 
