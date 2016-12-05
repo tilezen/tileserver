@@ -506,7 +506,8 @@ def create_tileserver_from_config(config):
         if queue_config:
             queue_type = queue_config.get('type')
             queue_name = queue_config.get('name')
-            sqs_queue = make_queue(queue_type, queue_name, redis_client)
+            sqs_queue = make_queue(queue_type, queue_name, queue_config,
+                                   redis_client)
 
     health_checker = None
     health_check_config = config.get('health')
