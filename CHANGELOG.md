@@ -1,6 +1,11 @@
 CHANGELOG
 =========
 
+v1.0.1
+------
+* Improvements to documentation.
+* Update to account for change to function signature which changed to accomodate priority queues. See [#54](https://github.com/tilezen/tileserver/pull/54) for more information.
+
 v1.0.0
 ------
 * Update process_cord function call to account for new return values (size logging).
