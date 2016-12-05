@@ -1,3 +1,8 @@
+# This needs to go before the imports for the packages that
+# will be instrumented (like psycopg2)
+import newrelic
+newrelic.agent.initialize('/tmp/newrelic.ini')
+
 from collections import namedtuple
 from cStringIO import StringIO
 from ModestMaps.Core import Coordinate
@@ -616,6 +621,9 @@ if __name__ == '__main__':
 
     tile_server = create_tileserver_from_config(config)
     tile_server.propagate_errors = True
+
+    # Wrapping the WSGI application with New Relic agent
+    tile_server = newrelic.agent.WSGIApplicationWrapper(tile_server)
 
     server_config = config['server']
     run_simple(server_config['host'], server_config['port'], tile_server,
