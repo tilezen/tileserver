@@ -24,6 +24,7 @@ setup(name='tileserver',
           'PyYAML',
           'tilequeue >= 0.7.1',
           'werkzeug',
+          'newrelic',
       ],
       entry_points="""
       # -*- Entry points: -*-
