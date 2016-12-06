@@ -248,6 +248,10 @@ class TileServer(object):
                                      (self.redis_cache_index, coord))
 
         wanted_formats = [json_format]
+        # add the request format, so that it gets created by the tile render
+        # process and will be saved along with the JSON format.
+        if format != json_format:
+            wanted_formats.append(format)
 
         # fetch data for all layers, even if the request was for a partial set.
         # this ensures that we can always store the result, allowing for reuse,
@@ -276,39 +280,23 @@ class TileServer(object):
                 self.io_pool.apply_async(
                     async_store, (self.store, data_all, coord, fmt, 'all'))
 
-        formatted_tile_all = formatted_tiles_all[0]
-        tile_data_all = formatted_tile_all['tile']
-
         # enqueue the coordinate to ensure other formats get processed
         if self.sqs_queue and coord.zoom <= 20:
             self.io_pool.apply_async(
                 async_enqueue, (self.sqs_queue, coord,))
 
         if layer_spec == 'all':
-            if format == json_format:
-                # already done all the work, just need to return the tile to
-                # the client.
-                tile_data = tile_data_all
-
-            else:
-                # just need to format the data differently
-                tile_data = reformat_selected_layers(
-                    tile_data_all, self.layer_config.all_layers, coord, format,
-                    self.buffer_cfg)
-
-                # note that we want to store the formatted data too,
-                # as this means that future requests can be serviced
-                # directly from the store.
-                if self.store and coord.zoom <= 20:
-                    self.io_pool.apply_async(
-                        async_store, (
-                            self.store, tile_data, coord, format, 'all'))
+            tile_data = self.extract_tile_data(
+                format, wanted_formats, formatted_tiles_all)
 
         else:
             # select the data that the user actually asked for from the
             # JSON/all tile that we just created.
+            json_data_all = self.extract_tile_data(
+                json_format, wanted_formats, formatted_tiles_all)
+
             tile_data = reformat_selected_layers(
-                tile_data_all, layer_data, coord, format, self.buffer_cfg)
+                json_data_all, layer_data, coord, format, self.buffer_cfg)
 
         response = self.create_response(
             request, 200, tile_data, format.mimetype)
@@ -357,6 +345,14 @@ class TileServer(object):
                     async_enqueue, (self.sqs_queue, coord,))
 
         return tile_data
+
+    def extract_tile_data(self, fmt, wanted_formats, formatted_tiles_all):
+        assert fmt in wanted_formats, \
+            "Format %r not found in configured formats: %r" \
+            % (fmt, wanted_formats)
+
+        index = wanted_formats.index(fmt)
+        return formatted_tiles_all[index]
 
 
 def async_store(store, tile_data, coord, format, layer):
