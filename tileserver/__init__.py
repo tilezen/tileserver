@@ -275,10 +275,7 @@ class TileServer(object):
 
         # store tile with data for all layers to the cache, so that we can read
         # it all back for the dynamic layer request above.
-        if self.store and coord.zoom <= 20:
-            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
-                self.io_pool.apply_async(
-                    async_store, (self.store, data_all, coord, fmt, 'all'))
+        self.store_tile(coord, wanted_formats, formatted_tiles_all)
 
         # enqueue the coordinate to ensure other formats get processed
         if self.sqs_queue and coord.zoom <= 20:
@@ -353,6 +350,14 @@ class TileServer(object):
 
         index = wanted_formats.index(fmt)
         return formatted_tiles_all[index]
+
+    def store_tile(self, coord, wanted_formats, formatted_tiles_all):
+        if not self.store or coord.zoom > 20:
+            return
+
+        for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+            self.io_pool.apply_async(
+                async_store, (self.store, data_all, coord, fmt, 'all'))
 
 
 def async_store(store, tile_data, coord, format, layer):
