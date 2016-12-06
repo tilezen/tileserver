@@ -246,6 +246,8 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
+        wanted_formats = [json_format]
+
         # fetch data for all layers, even if the request was for a partial set.
         # this ensures that we can always store the result, allowing for reuse,
         # but also that any post-processing functions which might have
@@ -258,20 +260,23 @@ class TileServer(object):
             coord,
             feature_data_all['feature_layers'],
             self.post_process_data,
-            [json_format],
+            wanted_formats,
             feature_data_all['unpadded_bounds'],
             [], [], self.buffer_cfg)
-        assert len(formatted_tiles_all) == 1, \
-            'unexpected number of tiles: %d' % len(formatted_tiles_all)
-        formatted_tile_all = formatted_tiles_all[0]
-        tile_data_all = formatted_tile_all['tile']
+
+        assert len(formatted_tiles_all) == len(wanted_formats), \
+            'unexpected number of tiles: %d, wanted %d' \
+            % (len(formatted_tiles_all), len(wanted_formats))
 
         # store tile with data for all layers to the cache, so that we can read
         # it all back for the dynamic layer request above.
         if self.store and coord.zoom <= 20:
-            self.io_pool.apply_async(
-                async_store, (self.store, tile_data_all, coord, json_format,
-                              'all'))
+            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+                self.io_pool.apply_async(
+                    async_store, (self.store, data_all, coord, fmt, 'all'))
+
+        formatted_tile_all = formatted_tiles_all[0]
+        tile_data_all = formatted_tile_all['tile']
 
         # enqueue the coordinate to ensure other formats get processed
         if self.sqs_queue and coord.zoom <= 20:
