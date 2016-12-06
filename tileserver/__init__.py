@@ -237,9 +237,10 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        resp = self.reformat_from_stored_json(request_data, layer_data)
-        if resp is not None:
-            return resp
+        tile_data = self.reformat_from_stored_json(request_data, layer_data)
+        if tile_data is not None:
+            return self.create_response(
+                request, 200, tile_data, format.mimetype)
 
         # update the tiles of interest set with the coordinate
         if self.redis_cache_index:
@@ -304,8 +305,8 @@ class TileServer(object):
                             self.store, tile_data, coord, format, 'all'))
 
         else:
-            # select the data that the user actually asked for from the JSON/all
-            # tile that we just created.
+            # select the data that the user actually asked for from the
+            # JSON/all tile that we just created.
             tile_data = reformat_selected_layers(
                 tile_data_all, layer_data, coord, format, self.buffer_cfg)
 
@@ -355,8 +356,7 @@ class TileServer(object):
                 self.io_pool.apply_async(
                     async_enqueue, (self.sqs_queue, coord,))
 
-        return self.create_response(
-            request, 200, tile_data, format.mimetype)
+        return tile_data
 
 
 def async_store(store, tile_data, coord, format, layer):
