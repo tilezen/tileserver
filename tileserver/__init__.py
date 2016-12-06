@@ -1,7 +1,7 @@
 # This needs to go before the imports for the packages that
 # will be instrumented (like psycopg2)
 import newrelic
-newrelic.agent.initialize('/tmp/newrelic.ini')
+newrelic.agent.initialize()
 
 from collections import namedtuple
 from cStringIO import StringIO
