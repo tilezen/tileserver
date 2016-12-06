@@ -1,6 +1,6 @@
 # This needs to go before the imports for the packages that
 # will be instrumented (like psycopg2)
-import newrelic
+import newrelic.agent
 newrelic.agent.initialize()
 
 from collections import namedtuple
