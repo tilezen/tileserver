@@ -237,44 +237,9 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        if self.store and coord.zoom <= 20:
-            # we either have a dynamic layer request, or it's a
-            # request for a new tile that is not currently in the
-            # tiles of interest, or it's for a request that's in the
-            # tiles of interest that hasn't been generated, possibly
-            # because a new prefix is used and all tiles haven't been
-            # generated yet before making the switch
-
-            # in any case, it makes sense to try and fetch the json
-            # format from the store first
-            tile_data = self.store.read_tile(coord, json_format, 'all')
-            if tile_data is not None:
-                # the json format exists in the store
-                # we'll use it to generate the response
-                tile_data = reformat_selected_layers(
-                    tile_data, layer_data, coord, format, self.buffer_cfg)
-                if layer_spec == 'all':
-                    # for the all layer, since the json format
-                    # existed, we should also save the requested
-                    # format too to allow the caches to serve it
-                    # directly in subsequent requests
-                    # we'll guard against re-saving json onto itself
-                    # though, which may be possible through a race
-                    # condition
-                    if format != json_format:
-                        self.io_pool.apply_async(
-                            async_store, (self.store, tile_data, coord,
-                                          format, 'all'))
-
-                    # additionally, we'll want to enqueue the tile
-                    # onto sqs to ensure that the other formats get
-                    # processed too.
-                    if self.sqs_queue:
-                        self.io_pool.apply_async(
-                            async_enqueue, (self.sqs_queue, coord,))
-
-                return self.create_response(
-                    request, 200, tile_data, format.mimetype)
+        resp = self.reformat_from_stored_json(request_data, layer_data)
+        if resp is not None:
+            return resp
 
         # update the tiles of interest set with the coordinate
         if self.redis_cache_index:
@@ -342,6 +307,51 @@ class TileServer(object):
         response = self.create_response(
             request, 200, tile_data, format.mimetype)
         return response
+
+    def reformat_from_stored_json(self, request_data, layer_data):
+        layer_spec = request_data.layer_spec
+        coord = request_data.coord
+        format = request_data.format
+
+        if not self.store or coord.zoom > 20:
+            return None
+
+        # we either have a dynamic layer request, or it's a request for a new
+        # tile that is not currently in the tiles of interest, or it's for a
+        # request that's in the tiles of interest that hasn't been generated,
+        # possibly because a new prefix is used and all tiles haven't been
+        # generated yet before making the switch
+
+        # in any case, it makes sense to try and fetch the json format from
+        # the store first
+        tile_data = self.store.read_tile(coord, json_format, 'all')
+        if tile_data is None:
+            return None
+
+        # the json format exists in the store we'll use it to generate the
+        # response
+        tile_data = reformat_selected_layers(
+            tile_data, layer_data, coord, format, self.buffer_cfg)
+
+        if layer_spec == 'all':
+            # for the all layer, since the json format existed, we should also
+            # save the requested format too to allow the caches to serve it
+            # directly in subsequent requests we'll guard against re-saving
+            # json onto itself though, which may be possible through a race
+            # condition
+            if format != json_format:
+                self.io_pool.apply_async(
+                    async_store, (self.store, tile_data, coord, format,
+                                  'all'))
+
+            # additionally, we'll want to enqueue the tile onto sqs to
+            # ensure that the other formats get processed too.
+            if self.sqs_queue:
+                self.io_pool.apply_async(
+                    async_enqueue, (self.sqs_queue, coord,))
+
+        return self.create_response(
+            request, 200, tile_data, format.mimetype)
 
 
 def async_store(store, tile_data, coord, format, layer):
