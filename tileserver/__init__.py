@@ -258,7 +258,7 @@ class TileServer(object):
 
         if self.metatile_size:
             # make all formats when making metatiles
-            wanted_formats = [self.formats]
+            wanted_formats = self.formats
 
         else:
             wanted_formats = [json_format]
@@ -297,14 +297,13 @@ class TileServer(object):
                 async_enqueue, (self.sqs_queue, coord,))
 
         if layer_spec == 'all':
-            tile_data = self.extract_tile_data(
-                format, wanted_formats, formatted_tiles_all)
+            tile_data = self.extract_tile_data(format, formatted_tiles_all)
 
         else:
             # select the data that the user actually asked for from the
             # JSON/all tile that we just created.
             json_data_all = self.extract_tile_data(
-                json_format, wanted_formats, formatted_tiles_all)
+                json_format, formatted_tiles_all)
 
             tile_data = reformat_selected_layers(
                 json_data_all, layer_data, coord, format, self.buffer_cfg)
@@ -357,36 +356,29 @@ class TileServer(object):
 
         return tile_data
 
-    def extract_tile_data(self, fmt, wanted_formats, formatted_tiles_all):
-        assert fmt in wanted_formats, \
-            "Format %r not found in configured formats: %r" \
-            % (fmt, wanted_formats)
+    def extract_tile_data(self, fmt, formatted_tiles_all):
+        for tile in formatted_tiles_all:
+            if tile['format'] == fmt:
+                return tile['tile']
 
-        index = wanted_formats.index(fmt)
-        return formatted_tiles_all[index]
+        raise KeyError("Unable to find format %r in formatted tiles." % fmt)
 
     def store_tile(self, coord, wanted_formats, formatted_tiles_all):
         if not self.store or coord.zoom > 20:
             return
 
         if self.metatile_size:
-            tiles = []
-            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
-                tiles.append(dict(
-                    coord=coord,
-                    layer='all',
-                    format=fmt,
-                    tile=data_all))
-
-            metatile = make_single_metatile(self.metatile_size, tiles)
+            metatile = make_single_metatile(
+                self.metatile_size, formatted_tiles_all)
             self.io_pool.apply_async(
-                async_store, (self.store, metatile['tile'], coord,
+                async_store, (self.store, metatile[0]['tile'], coord,
                               zip_format, 'all'))
 
-        else:
-            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+        if not self.metatile_size or self.metatile_store_originals:
+            for tile in formatted_tiles_all:
                 self.io_pool.apply_async(
-                    async_store, (self.store, data_all, coord, fmt, 'all'))
+                    async_store, (self.store, tile['tile'], coord,
+                                  tile['format'], 'all'))
 
     def read_tile(self, coord):
         if self.metatile_size:
