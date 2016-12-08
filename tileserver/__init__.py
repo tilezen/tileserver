@@ -5,7 +5,8 @@ from multiprocessing.pool import ThreadPool
 from tilequeue.command import make_queue
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
-from tilequeue.format import json_format
+from tilequeue.format import json_format, zip_format, topojson_format, \
+    mvt_format
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
 from tilequeue.tile import calc_meters_per_pixel_dim
@@ -15,6 +16,7 @@ from tilequeue.tile import serialize_coord
 from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
+from tilequeue.metatile import make_single_metatile, extract_metatile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
 import json
@@ -175,8 +177,9 @@ class TileServer(object):
 
     def __init__(self, layer_config, extensions, data_fetcher,
                  post_process_data, io_pool, store, redis_cache_index,
-                 sqs_queue, buffer_cfg, health_checker=None,
-                 add_cors_headers=False):
+                 sqs_queue, buffer_cfg, formats, health_checker=None,
+                 add_cors_headers=False, metatile_size=None,
+                 metatile_store_originals=False):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -186,8 +189,14 @@ class TileServer(object):
         self.redis_cache_index = redis_cache_index
         self.sqs_queue = sqs_queue
         self.buffer_cfg = buffer_cfg
+        self.formats = formats
         self.health_checker = health_checker
         self.add_cors_headers = add_cors_headers
+        self.metatile_size = metatile_size
+        if self.metatile_size:
+            assert self.metatile_size == 1, "Metatile sizes other than 1 " \
+                "are not currently supported."
+        self.metatile_store_originals = metatile_store_originals
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -247,11 +256,16 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
-        wanted_formats = [json_format]
-        # add the request format, so that it gets created by the tile render
-        # process and will be saved along with the JSON format.
-        if format != json_format:
-            wanted_formats.append(format)
+        if self.metatile_size:
+            # make all formats when making metatiles
+            wanted_formats = [self.formats]
+
+        else:
+            wanted_formats = [json_format]
+            # add the request format, so that it gets created by the tile
+            # render process and will be saved along with the JSON format.
+            if format != json_format:
+                wanted_formats.append(format)
 
         # fetch data for all layers, even if the request was for a partial set.
         # this ensures that we can always store the result, allowing for reuse,
@@ -315,7 +329,7 @@ class TileServer(object):
 
         # in any case, it makes sense to try and fetch the json format from
         # the store first
-        tile_data = self.store.read_tile(coord, json_format, 'all')
+        tile_data = self.read_tile(coord)
         if tile_data is None:
             return None
 
@@ -355,9 +369,42 @@ class TileServer(object):
         if not self.store or coord.zoom > 20:
             return
 
-        for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+        if self.metatile_size:
+            tiles = []
+            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+                tiles.append(dict(
+                    coord=coord,
+                    layer='all',
+                    format=fmt,
+                    tile=data_all))
+
+            metatile = make_single_metatile(self.metatile_size, tiles)
             self.io_pool.apply_async(
-                async_store, (self.store, data_all, coord, fmt, 'all'))
+                async_store, (self.store, metatile['tile'], coord,
+                              zip_format, 'all'))
+
+        else:
+            for fmt, data_all in wanted_formats.zip(formatted_tiles_all):
+                self.io_pool.apply_async(
+                    async_store, (self.store, data_all, coord, fmt, 'all'))
+
+    def read_tile(self, coord):
+        if self.metatile_size:
+            fmt = zip_format
+        else:
+            fmt = json_format
+
+        raw_data = self.store.read_tile(coord, fmt, 'all')
+        if raw_data is None:
+            return None
+
+        if self.metatile_size:
+            zip_io = StringIO(raw_data)
+            return extract_metatile(
+                self.metatile_size, zip_io, dict(format=json_format))
+
+        else:
+            return raw_data
 
 
 def async_store(store, tile_data, coord, format, layer):
@@ -476,13 +523,16 @@ def create_tileserver_from_config(config):
 
     extensions_config = config.get('formats')
     extensions = set()
+    formats = []
     if extensions_config:
         for extension in extensions_config:
             assert extension in extension_to_format, \
                 'Unknown format: %s' % extension
             extensions.add(extension)
+            formats.append(extension_to_format[extension])
     else:
         extensions = set(['json', 'topojson', 'mvt'])
+        formats = [json_format, topojson_format, mvt_format]
 
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
@@ -533,10 +583,19 @@ def create_tileserver_from_config(config):
 
     add_cors_headers = config.get('cors', False)
 
+    metatile_size = None
+    metatile_store_originals = False
+    metatile_config = config.get('metatile')
+    if metatile_config:
+        metatile_size = metatile_config.get('size')
+        metatile_store_originals = metatile_config.get(
+            'store_metatile_and_originals')
+
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, sqs_queue, buffer_cfg, health_checker,
-        add_cors_headers)
+        store, redis_cache_index, sqs_queue, buffer_cfg, formats,
+        health_checker, add_cors_headers, metatile_size,
+        metatile_store_originals)
     return tile_server
 
 
