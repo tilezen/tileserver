@@ -193,7 +193,7 @@ class TileServer(object):
         self.health_checker = health_checker
         self.add_cors_headers = add_cors_headers
         self.metatile_size = metatile_size
-        if self.metatile_size:
+        if self.metatile_size is not None:
             assert self.metatile_size == 1, "Metatile sizes other than 1 " \
                 "are not currently supported."
         self.metatile_store_originals = metatile_store_originals
@@ -256,7 +256,7 @@ class TileServer(object):
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
-        if self.metatile_size:
+        if self.using_metatiles():
             # make all formats when making metatiles
             wanted_formats = self.formats
 
@@ -367,7 +367,7 @@ class TileServer(object):
         if not self.store or coord.zoom > 20:
             return
 
-        if self.metatile_size:
+        if self.using_metatiles():
             metatile = make_single_metatile(
                 self.metatile_size, formatted_tiles_all)
             self.io_pool.apply_async(
@@ -381,7 +381,7 @@ class TileServer(object):
                                   tile['format'], 'all'))
 
     def read_tile(self, coord):
-        if self.metatile_size:
+        if self.using_metatiles():
             fmt = zip_format
         else:
             fmt = json_format
@@ -390,13 +390,16 @@ class TileServer(object):
         if raw_data is None:
             return None
 
-        if self.metatile_size:
+        if self.using_metatiles():
             zip_io = StringIO(raw_data)
             return extract_metatile(
                 self.metatile_size, zip_io, dict(format=json_format))
 
         else:
             return raw_data
+
+    def using_metatiles(self):
+        return self.metatile_size is not None
 
 
 def async_store(store, tile_data, coord, format, layer):
