@@ -604,6 +604,8 @@ def wsgi_server(config_path):
     with open(config_path) as fp:
         config = yaml.load(fp)
     tile_server = create_tileserver_from_config(config)
+    # Wrapping the WSGI application with New Relic agent
+    tile_server = newrelic.agent.WSGIApplicationWrapper(tile_server)
     return tile_server
 
 
