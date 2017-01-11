@@ -24,7 +24,7 @@ from tilequeue.utils import format_stacktrace_one_line
 from tilequeue.metatile import make_single_metatile, extract_metatile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
-import json
+import ujson as json
 import psycopg2
 import random
 import shapely.geometry
