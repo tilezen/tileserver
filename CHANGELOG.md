@@ -1,6 +1,12 @@
 CHANGELOG
 =========
 
+v1.1.0
+------
+* Add support for meta-tiles to group multiple formats per tile coordinate into a single ZIP archive (See [#53](https://github.com/tilezen/tileserver/issues/53))
+* Improve performance of GeoJSON and TopoJSON format generation by using ujson (See [tileserver/#139](https://github.com/tilezen/tilequeue/issues/139))
+* Add support for psycopg2 connection pools (See [#59](https://github.com/tilezen/tileserver/pull/59) and [tilequeue/#141](https://github.com/tilezen/tilequeue/issues/141))
+
 v1.0.1
 ------
 * Improvements to documentation.
