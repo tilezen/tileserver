@@ -541,7 +541,7 @@ def create_tileserver_from_config(config):
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
-        conn_info, all_layer_data, io_pool, n_conn, n_conn)
+        conn_info, all_layer_data, io_pool, n_conn, n_conn * 4)
 
     store = None
     store_config = config.get('store')
