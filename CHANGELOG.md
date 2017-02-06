@@ -1,6 +1,11 @@
 CHANGELOG
 =========
 
+v1.2.0
+------
+* Roll back the use of psycopg2 connection pools. (See [tilequeue/#149](https://github.com/tilezen/tilequeue/pull/149) and [#62](https://github.com/tilezen/tileserver/pull/62))
+* Try increasing the maximum connection count on connection pools. (See [#61](https://github.com/tilezen/tileserver/pull/61))
+
 v1.1.0
 ------
 * Add support for meta-tiles to group multiple formats per tile coordinate into a single ZIP archive (See [#53](https://github.com/tilezen/tileserver/issues/53))
