@@ -281,7 +281,7 @@ class TileServer(object):
             self.post_process_data,
             wanted_formats,
             feature_data_all['unpadded_bounds'],
-            [], [], self.buffer_cfg)
+            [], self.buffer_cfg)
 
         assert len(formatted_tiles_all) == len(wanted_formats), \
             'unexpected number of tiles: %d, wanted %d' \
