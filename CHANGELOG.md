@@ -1,6 +1,10 @@
 CHANGELOG
 =========
 
+v1.3.0
+------
+* Remove "layers to format" functionality. (See https://github.com/tilezen/tileserver/pull/65)
+
 v1.2.0
 ------
 * Roll back the use of psycopg2 connection pools. (See [tilequeue/#149](https://github.com/tilezen/tilequeue/pull/149) and [#62](https://github.com/tilezen/tileserver/pull/62))
