@@ -277,6 +277,7 @@ class TileServer(object):
 
         formatted_tiles_all, extra_data = process_coord(
             coord,
+            coord.zoom,
             feature_data_all['feature_layers'],
             self.post_process_data,
             wanted_formats,
