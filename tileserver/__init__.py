@@ -272,8 +272,9 @@ class TileServer(object):
         # but also that any post-processing functions which might have
         # dependencies on multiple layers will still work properly (e.g:
         # buildings or roads layer being cut against landuse).
+        unpadded_bounds = coord_to_mercator_bounds(coord)
         feature_data_all = self.data_fetcher(
-            coord, self.layer_config.all_layers)
+            coord.zoom, unpadded_bounds, self.layer_config.all_layers)
 
         formatted_tiles_all, extra_data = process_coord(
             coord,
