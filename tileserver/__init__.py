@@ -38,26 +38,12 @@ def coord_is_valid(coord):
     return True
 
 
-RequestData = namedtuple('RequestData', 'layer_spec coord format params')
+RequestData = namedtuple('RequestData', 'layer_spec coord format')
 
 
-def parse_request_path(path, extensions_to_handle, styles=None):
+def parse_request_path(path, extensions_to_handle):
     """given a path, parse the underlying layer, coordinate, and format"""
     parts = path.split('/')
-
-    # allow an optional "style" at the beginning of the URL, which would
-    # normally be "/layers/z/x/y.fmt". this means we take the name from
-    # "/style/layers/z/x/y.fmt", if the path is formatted that way.
-    style_params = {}
-    if len(parts) == 6 and styles is not None:
-        style_name = parts.pop(1)
-        # look up the style in the argument "styles", which is expected to
-        # be a dict mapping style name to parameters to merge into the
-        # request data.
-        style_params = styles.get(style_name)
-        if style_params is None:
-            return None
-
     if len(parts) != 5:
         return None
     _, layer_spec, zoom_str, column_str, row_and_ext = parts
@@ -78,7 +64,7 @@ def parse_request_path(path, extensions_to_handle, styles=None):
     coord = Coordinate(zoom=zoom, column=column, row=row)
     if not coord_is_valid(coord):
         return None
-    request_data = RequestData(layer_spec, coord, format, style_params)
+    request_data = RequestData(layer_spec, coord, format)
     return request_data
 
 
@@ -248,8 +234,7 @@ class TileServer(object):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
-        request_data = parse_request_path(request.path, self.extensions,
-                                          styles=self.styles)
+        request_data = parse_request_path(request.path, self.extensions)
         if request_data is None:
             return self.generate_404(request)
         layer_spec = request_data.layer_spec
@@ -397,10 +382,9 @@ class TileServer(object):
                     async_store, (self.store, tile['tile'], coord,
                                   tile['format'], 'all'))
 
-    def read_tile(self, coord, request_tile_size):
+    def read_tile(self, coord):
         if self.using_metatiles():
             fmt = zip_format
-            coord, offset = self.coord_split(coord, request_tile_size)
         else:
             fmt = json_format
 
@@ -410,42 +394,14 @@ class TileServer(object):
 
         if self.using_metatiles():
             zip_io = StringIO(raw_data)
-            return extract_metatile(zip_io, json_format, offset)
+            return extract_metatile(
+                self.metatile_size, zip_io, dict(format=json_format))
 
         else:
             return raw_data
 
     def using_metatiles(self):
         return self.metatile_size is not None
-
-    def coord_split(self, request_coord, request_tile_size):
-        """
-        A metatile can store many coordinates, which means that the coordinate
-        of the metatile might be different from the coordinate of the tile
-        which was requested. This method splits the tile coordinate into two
-        parts; the metatile part and the "offset" within the metatile.
-        """
-
-        if not self.using_metatiles():
-            return request_coord, None
-
-        assert request_tile_size <= self.metatile_size, \
-            "Request for tile with size greater than the metatile size."
-
-        metatile_zoom = int(math.log(self.metatile_size, 2))
-        tile_size_zoom = int(math.log(request_tile_size, 2))
-        delta_zoom = metatile_zoom - tile_size_zoom
-
-        meta_coord = Coordinate(
-            zoom=request_coord.zoom - delta_zoom,
-            column=request_coord.column >> delta_zoom,
-            row=request_coord.row >> delta_zoom)
-        offset_coord = Coordinate(
-            zoom=delta_zoom
-            column=request_coord.column - meta_coord.column << delta_zoom,
-            row=request_coord.row - meta_coord.row << delta_zoom)
-
-        return meta_coord, offset_coord
 
 
 def async_store(store, tile_data, coord, format, layer):
