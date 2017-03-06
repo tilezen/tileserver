@@ -163,7 +163,7 @@ def reformat_selected_layers(
         meters_per_pixel_dim, buffer_cfg)
 
     tile_data_file = StringIO()
-    format.format_tile(tile_data_file, feature_layers, coord,
+    format.format_tile(tile_data_file, feature_layers, coord.zoom,
                        bounds_merc, bounds_lnglat)
     tile_data = tile_data_file.getvalue()
     return tile_data
