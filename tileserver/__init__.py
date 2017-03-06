@@ -16,7 +16,7 @@ from tilequeue.tile import serialize_coord
 from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
-from tilequeue.metatile import make_single_metatile, extract_metatile
+from tilequeue.metatile import make_metatiles, extract_metatile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
 import ujson as json
@@ -370,7 +370,7 @@ class TileServer(object):
             return
 
         if self.using_metatiles():
-            metatile = make_single_metatile(
+            metatile = make_metatiles(
                 self.metatile_size, formatted_tiles_all)
             self.io_pool.apply_async(
                 async_store, (self.store, metatile[0]['tile'], coord,
