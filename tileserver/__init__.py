@@ -371,9 +371,10 @@ class TileServer(object):
             return None
 
         # the json format exists in the store we'll use it to generate the
-        # response
-        tile_data = reformat_selected_layers(
-            tile_data, layer_data, coord, format, self.buffer_cfg)
+        # response. don't need to reformat if the tile is already in JSON.
+        if layer_spec != 'all' or format != json_format:
+            tile_data = reformat_selected_layers(
+                tile_data, layer_data, coord, format, self.buffer_cfg)
 
         if layer_spec == 'all':
             # for the all layer, since the json format existed, we should also
