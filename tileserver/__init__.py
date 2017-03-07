@@ -661,12 +661,13 @@ def create_tileserver_from_config(config):
         metatile_size = metatile_config.get('size')
         metatile_store_originals = metatile_config.get(
             'store_metatile_and_originals')
+    styles = config.get('styles')
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, redis_cache_index, sqs_queue, buffer_cfg, formats,
         health_checker, add_cors_headers, metatile_size,
-        metatile_store_originals)
+        metatile_store_originals, styles)
     return tile_server
 
 
