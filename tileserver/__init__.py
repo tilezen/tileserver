@@ -40,24 +40,23 @@ def coord_is_valid(coord):
     return True
 
 
-RequestData = namedtuple('RequestData', 'layer_spec coord format params')
+RequestData = namedtuple('RequestData', 'layer_spec coord format tile_size')
 
 
-def parse_request_path(path, extensions_to_handle, styles=None):
+def parse_request_path(path, extensions_to_handle, path_tile_size=None):
     """given a path, parse the underlying layer, coordinate, and format"""
     parts = path.split('/')
 
-    # allow an optional "style" at the beginning of the URL, which would
+    # allow an optional prefix at the beginning of the URL, which would
     # normally be "/layers/z/x/y.fmt". this means we take the name from
-    # "/style/layers/z/x/y.fmt", if the path is formatted that way.
-    style_params = {}
-    if len(parts) == 6 and styles is not None:
-        style_name = parts.pop(1)
-        # look up the style in the argument "styles", which is expected to
-        # be a dict mapping style name to parameters to merge into the
-        # request data.
-        style_params = styles.get(style_name)
-        if style_params is None:
+    # "/prefix/layers/z/x/y.fmt", if the path is formatted that way.
+    tile_size = 1
+    if len(parts) == 6 and path_tile_size is not None:
+        prefix = parts.pop(1)
+        # look up the prefix in the argument "path_tile_size", which is
+        # expected to be a dict mapping prefix to tile size (integer).
+        tile_size = path_tile_size.get(prefix)
+        if tile_size is None:
             return None
 
     if len(parts) != 5:
@@ -80,7 +79,7 @@ def parse_request_path(path, extensions_to_handle, styles=None):
     coord = Coordinate(zoom=zoom, column=column, row=row)
     if not coord_is_valid(coord):
         return None
-    request_data = RequestData(layer_spec, coord, format, style_params)
+    request_data = RequestData(layer_spec, coord, format, tile_size)
     return request_data
 
 
@@ -195,7 +194,7 @@ class TileServer(object):
                  post_process_data, io_pool, store, redis_cache_index,
                  sqs_queue, buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
-                 metatile_store_originals=False, styles=None):
+                 metatile_store_originals=False, path_tile_size=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -215,7 +214,7 @@ class TileServer(object):
                 "Metatile sizes must be a power of two, but %d doesn't look " \
                 "like one." % self.metatile_size
         self.metatile_store_originals = metatile_store_originals
-        self.styles = styles or {}
+        self.path_tile_size = path_tile_size or {}
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -254,7 +253,7 @@ class TileServer(object):
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
         request_data = parse_request_path(request.path, self.extensions,
-                                          styles=self.styles)
+                                          self.path_tile_size)
         if request_data is None:
             return self.generate_404(request)
         layer_spec = request_data.layer_spec
@@ -287,7 +286,7 @@ class TileServer(object):
             if format != json_format:
                 wanted_formats.append(format)
 
-        tile_size = request_data.params.get('tile_size', 1)
+        tile_size = request_data.tile_size
         meta_coord, offset = self.coord_split(coord, tile_size)
 
         nominal_zoom = coord.zoom
@@ -661,13 +660,13 @@ def create_tileserver_from_config(config):
         metatile_size = metatile_config.get('size')
         metatile_store_originals = metatile_config.get(
             'store_metatile_and_originals')
-    styles = config.get('styles')
+    path_tile_size = config.get('path_tile_size')
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, redis_cache_index, sqs_queue, buffer_cfg, formats,
         health_checker, add_cors_headers, metatile_size,
-        metatile_store_originals, styles)
+        metatile_store_originals, path_tile_size)
     return tile_server
 
 
