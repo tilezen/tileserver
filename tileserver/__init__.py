@@ -354,7 +354,7 @@ class TileServer(object):
         if not self.store or coord.zoom > 20:
             return None
 
-        tile_size = request_data.params.get('tile_size', 1)
+        tile_size = request_data.tile_size
         meta_coord, offset = self.coord_split(coord, tile_size)
 
         # we either have a dynamic layer request, or it's a request for a new
