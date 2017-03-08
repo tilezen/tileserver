@@ -10,6 +10,7 @@ from tilequeue.format import json_format, zip_format, topojson_format, \
 from tilequeue.process import process_coord
 from tilequeue.query import DataFetcher
 from tilequeue.tile import calc_meters_per_pixel_dim
+from tilequeue.tile import coord_children_range
 from tilequeue.tile import coord_to_mercator_bounds
 from tilequeue.tile import reproject_lnglat_to_mercator
 from tilequeue.tile import serialize_coord
@@ -27,6 +28,7 @@ import shapely.ops
 import shapely.wkb
 import yaml
 import os.path
+import math
 
 
 def coord_is_valid(coord):
@@ -38,12 +40,25 @@ def coord_is_valid(coord):
     return True
 
 
-RequestData = namedtuple('RequestData', 'layer_spec coord format')
+RequestData = namedtuple('RequestData', 'layer_spec coord format tile_size')
 
 
-def parse_request_path(path, extensions_to_handle):
+def parse_request_path(path, extensions_to_handle, path_tile_size=None):
     """given a path, parse the underlying layer, coordinate, and format"""
     parts = path.split('/')
+
+    # allow an optional prefix at the beginning of the URL, which would
+    # normally be "/layers/z/x/y.fmt". this means we take the name from
+    # "/prefix/layers/z/x/y.fmt", if the path is formatted that way.
+    tile_size = 1
+    if len(parts) == 6 and path_tile_size is not None:
+        prefix = parts.pop(1)
+        # look up the prefix in the argument "path_tile_size", which is
+        # expected to be a dict mapping prefix to tile size (integer).
+        tile_size = path_tile_size.get(prefix)
+        if tile_size is None:
+            return None
+
     if len(parts) != 5:
         return None
     _, layer_spec, zoom_str, column_str, row_and_ext = parts
@@ -64,7 +79,7 @@ def parse_request_path(path, extensions_to_handle):
     coord = Coordinate(zoom=zoom, column=column, row=row)
     if not coord_is_valid(coord):
         return None
-    request_data = RequestData(layer_spec, coord, format)
+    request_data = RequestData(layer_spec, coord, format, tile_size)
     return request_data
 
 
@@ -179,7 +194,7 @@ class TileServer(object):
                  post_process_data, io_pool, store, redis_cache_index,
                  sqs_queue, buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
-                 metatile_store_originals=False):
+                 metatile_store_originals=False, path_tile_size=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -194,9 +209,12 @@ class TileServer(object):
         self.add_cors_headers = add_cors_headers
         self.metatile_size = metatile_size
         if self.metatile_size is not None:
-            assert self.metatile_size == 1, "Metatile sizes other than 1 " \
-                "are not currently supported."
+            self.metatile_zoom = int(math.log(self.metatile_size, 2))
+            assert self.metatile_size == (1 << self.metatile_zoom), \
+                "Metatile sizes must be a power of two, but %d doesn't look " \
+                "like one." % self.metatile_size
         self.metatile_store_originals = metatile_store_originals
+        self.path_tile_size = path_tile_size or {}
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -234,7 +252,8 @@ class TileServer(object):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
-        request_data = parse_request_path(request.path, self.extensions)
+        request_data = parse_request_path(request.path, self.extensions,
+                                          self.path_tile_size)
         if request_data is None:
             return self.generate_404(request)
         layer_spec = request_data.layer_spec
@@ -267,45 +286,58 @@ class TileServer(object):
             if format != json_format:
                 wanted_formats.append(format)
 
+        tile_size = request_data.tile_size
+        meta_coord, offset = self.coord_split(coord, tile_size)
+
+        nominal_zoom = coord.zoom
+        cut_coords = []
+        if self.using_metatiles():
+            nominal_zoom = meta_coord.zoom + self.metatile_zoom
+            if self.metatile_zoom > 0:
+                cut_coords.extend(
+                    coord_children_range(meta_coord, nominal_zoom))
+
         # fetch data for all layers, even if the request was for a partial set.
         # this ensures that we can always store the result, allowing for reuse,
         # but also that any post-processing functions which might have
         # dependencies on multiple layers will still work properly (e.g:
         # buildings or roads layer being cut against landuse).
-        unpadded_bounds = coord_to_mercator_bounds(coord)
+        unpadded_bounds = coord_to_mercator_bounds(meta_coord)
         feature_data_all = self.data_fetcher(
-            coord.zoom, unpadded_bounds, self.layer_config.all_layers)
+            nominal_zoom, unpadded_bounds, self.layer_config.all_layers)
 
         formatted_tiles_all, extra_data = process_coord(
-            coord,
-            coord.zoom,
+            meta_coord,
+            nominal_zoom,
             feature_data_all['feature_layers'],
             self.post_process_data,
             wanted_formats,
             feature_data_all['unpadded_bounds'],
-            [], self.buffer_cfg)
+            cut_coords, self.buffer_cfg)
 
-        assert len(formatted_tiles_all) == len(wanted_formats), \
+        expected_tile_count = len(wanted_formats) * (1 + len(cut_coords))
+        assert len(formatted_tiles_all) == expected_tile_count, \
             'unexpected number of tiles: %d, wanted %d' \
-            % (len(formatted_tiles_all), len(wanted_formats))
+            % (len(formatted_tiles_all), expected_tile_count)
 
         # store tile with data for all layers to the cache, so that we can read
         # it all back for the dynamic layer request above.
-        self.store_tile(coord, wanted_formats, formatted_tiles_all)
+        self.store_tile(meta_coord, wanted_formats, formatted_tiles_all)
 
         # enqueue the coordinate to ensure other formats get processed
         if self.sqs_queue and coord.zoom <= 20:
             self.io_pool.apply_async(
-                async_enqueue, (self.sqs_queue, coord,))
+                async_enqueue, (self.sqs_queue, meta_coord,))
 
         if layer_spec == 'all':
-            tile_data = self.extract_tile_data(format, formatted_tiles_all)
+            tile_data = self.extract_tile_data(
+                coord, format, formatted_tiles_all)
 
         else:
             # select the data that the user actually asked for from the
             # JSON/all tile that we just created.
             json_data_all = self.extract_tile_data(
-                json_format, formatted_tiles_all)
+                coord, json_format, formatted_tiles_all)
 
             tile_data = reformat_selected_layers(
                 json_data_all, layer_data, coord, format, self.buffer_cfg)
@@ -322,6 +354,9 @@ class TileServer(object):
         if not self.store or coord.zoom > 20:
             return None
 
+        tile_size = request_data.tile_size
+        meta_coord, offset = self.coord_split(coord, tile_size)
+
         # we either have a dynamic layer request, or it's a request for a new
         # tile that is not currently in the tiles of interest, or it's for a
         # request that's in the tiles of interest that hasn't been generated,
@@ -330,14 +365,15 @@ class TileServer(object):
 
         # in any case, it makes sense to try and fetch the json format from
         # the store first
-        tile_data = self.read_tile(coord)
+        tile_data = self.read_tile(meta_coord, offset)
         if tile_data is None:
             return None
 
         # the json format exists in the store we'll use it to generate the
-        # response
-        tile_data = reformat_selected_layers(
-            tile_data, layer_data, coord, format, self.buffer_cfg)
+        # response. don't need to reformat if the tile is already in JSON.
+        if layer_spec != 'all' or format != json_format:
+            tile_data = reformat_selected_layers(
+                tile_data, layer_data, coord, format, self.buffer_cfg)
 
         if layer_spec == 'all':
             # for the all layer, since the json format existed, we should also
@@ -345,36 +381,45 @@ class TileServer(object):
             # directly in subsequent requests we'll guard against re-saving
             # json onto itself though, which may be possible through a race
             # condition
-            if format != json_format:
+            #
+            # we can't store if we're using metatiles, as the metatile should
+            # already contains all the formats, and might contain more than
+            # one coordinate!
+            if format != json_format and not self.using_metatiles():
                 self.io_pool.apply_async(
                     async_store, (self.store, tile_data, coord, format,
                                   'all'))
 
             # additionally, we'll want to enqueue the tile onto sqs to
             # ensure that the other formats get processed too.
+            #
+            # note that we enqueue the _meta_ coord, as this is the unit of
+            # work when we're using metatiles.
             if self.sqs_queue:
                 self.io_pool.apply_async(
-                    async_enqueue, (self.sqs_queue, coord,))
+                    async_enqueue, (self.sqs_queue, meta_coord,))
 
         return tile_data
 
-    def extract_tile_data(self, fmt, formatted_tiles_all):
+    def extract_tile_data(self, coord, fmt, formatted_tiles_all):
         for tile in formatted_tiles_all:
-            if tile['format'] == fmt:
+            if tile['format'] == fmt and tile['coord'] == coord:
                 return tile['tile']
 
-        raise KeyError("Unable to find format %r in formatted tiles." % fmt)
+        raise KeyError("Unable to find format %r at coordinate %r in "
+                       "formatted tiles." % (fmt, coord))
 
     def store_tile(self, coord, wanted_formats, formatted_tiles_all):
         if not self.store or coord.zoom > 20:
             return
 
         if self.using_metatiles():
-            metatile = make_metatiles(
+            metatiles = make_metatiles(
                 self.metatile_size, formatted_tiles_all)
-            self.io_pool.apply_async(
-                async_store, (self.store, metatile[0]['tile'], coord,
-                              zip_format, 'all'))
+            for tile in metatiles:
+                self.io_pool.apply_async(
+                    async_store, (self.store, tile['tile'], tile['coord'],
+                                  tile['format'], 'all'))
 
         if not self.metatile_size or self.metatile_store_originals:
             for tile in formatted_tiles_all:
@@ -382,7 +427,7 @@ class TileServer(object):
                     async_store, (self.store, tile['tile'], coord,
                                   tile['format'], 'all'))
 
-    def read_tile(self, coord):
+    def read_tile(self, coord, offset=None):
         if self.using_metatiles():
             fmt = zip_format
         else:
@@ -394,14 +439,42 @@ class TileServer(object):
 
         if self.using_metatiles():
             zip_io = StringIO(raw_data)
-            return extract_metatile(
-                self.metatile_size, zip_io, dict(format=json_format))
+            return extract_metatile(zip_io, json_format, offset)
 
         else:
             return raw_data
 
     def using_metatiles(self):
         return self.metatile_size is not None
+
+    def coord_split(self, request_coord, request_tile_size):
+        """
+        A metatile can store many coordinates, which means that the coordinate
+        of the metatile might be different from the coordinate of the tile
+        which was requested. This method splits the tile coordinate into two
+        parts; the metatile part and the "offset" within the metatile.
+        """
+
+        if not self.using_metatiles():
+            return request_coord, None
+
+        assert request_tile_size <= self.metatile_size, \
+            "Request for tile with size greater than the metatile size."
+
+        metatile_zoom = int(math.log(self.metatile_size, 2))
+        tile_size_zoom = int(math.log(request_tile_size, 2))
+        delta_zoom = metatile_zoom - tile_size_zoom
+
+        meta_coord = Coordinate(
+            zoom=request_coord.zoom - delta_zoom,
+            column=request_coord.column >> delta_zoom,
+            row=request_coord.row >> delta_zoom)
+        offset_coord = Coordinate(
+            zoom=delta_zoom,
+            column=request_coord.column - (meta_coord.column << delta_zoom),
+            row=request_coord.row - (meta_coord.row << delta_zoom))
+
+        return meta_coord, offset_coord
 
 
 def async_store(store, tile_data, coord, format, layer):
@@ -587,12 +660,13 @@ def create_tileserver_from_config(config):
         metatile_size = metatile_config.get('size')
         metatile_store_originals = metatile_config.get(
             'store_metatile_and_originals')
+    path_tile_size = config.get('path_tile_size')
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, redis_cache_index, sqs_queue, buffer_cfg, formats,
         health_checker, add_cors_headers, metatile_size,
-        metatile_store_originals)
+        metatile_store_originals, path_tile_size)
     return tile_server
 
 
