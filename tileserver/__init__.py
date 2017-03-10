@@ -1,4 +1,3 @@
-from boto.exception import BotoServerError
 from collections import namedtuple
 from cStringIO import StringIO
 from ModestMaps.Core import Coordinate
@@ -436,7 +435,7 @@ class TileServer(object):
 
         try:
             raw_data = self.store.read_tile(coord, fmt, 'all')
-        except BotoServerError:
+        except:
             stacktrace = format_stacktrace_one_line()
             print 'Error reading coord %s with format %s: %s' % (
                 serialize_coord(coord), format.extension, stacktrace)
