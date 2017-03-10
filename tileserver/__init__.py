@@ -433,6 +433,7 @@ class TileServer(object):
         else:
             fmt = json_format
 
+        raw_data = None
         try:
             raw_data = self.store.read_tile(coord, fmt, 'all')
         except:
