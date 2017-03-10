@@ -433,7 +433,14 @@ class TileServer(object):
         else:
             fmt = json_format
 
-        raw_data = self.store.read_tile(coord, fmt, 'all')
+        raw_data = None
+        try:
+            raw_data = self.store.read_tile(coord, fmt, 'all')
+        except:
+            stacktrace = format_stacktrace_one_line()
+            print 'Error reading coord %s with format %s: %s' % (
+                serialize_coord(coord), format.extension, stacktrace)
+
         if raw_data is None:
             return None
 
