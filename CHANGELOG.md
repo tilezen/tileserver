@@ -1,6 +1,19 @@
 CHANGELOG
 =========
 
+v1.4.0
+------
+* Fix gitignore to more pythonic.
+* Pass nominal zoom explicitly to process_coord.
+* Query the DataFetcher at nominal zoom, which is the same as the coordinate zoom for tileserver.
+* Update tileserver for change in metatile function name and signature.
+* Add support for 2x2 metatiles to tileserver.
+* Don't reformat if we already have the format and layers we want.
+* Make tile size configurable.
+* Catch Exceptions when reading tile data and log it.
+* Clamp to 0/0/0.
+* Fix code to add metatile coordinate to TOI.
+
 v1.3.0
 ------
 * Remove "layers to format" functionality. (See https://github.com/tilezen/tileserver/pull/65)
