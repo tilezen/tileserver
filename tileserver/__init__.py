@@ -194,7 +194,8 @@ class TileServer(object):
                  post_process_data, io_pool, store, redis_cache_index,
                  sqs_queue, buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
-                 metatile_store_originals=False, path_tile_size=None):
+                 metatile_store_originals=False, path_tile_size=None,
+                 max_interesting_zoom=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -215,6 +216,7 @@ class TileServer(object):
                 "like one." % self.metatile_size
         self.metatile_store_originals = metatile_store_originals
         self.path_tile_size = path_tile_size or {}
+        self.max_interesting_zoom = max_interesting_zoom or 20
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -270,8 +272,16 @@ class TileServer(object):
             return self.create_response(
                 request, 200, tile_data, format.mimetype)
 
+        tile_size = request_data.tile_size
+        meta_coord, offset = self.coord_split(coord, tile_size)
+
+        # only add tiles to the TOI and store them up to this zoom level.
+        # anything at higher zooms can be generated, but should not be stored
+        # or kept up to date.
+        interesting_tile = meta_coord.zoom <= self.max_interesting_zoom
+
         # update the tiles of interest set with the coordinate
-        if self.redis_cache_index:
+        if self.redis_cache_index and interesting_tile:
             self.io_pool.apply_async(async_update_tiles_of_interest,
                                      (self.redis_cache_index, coord))
 
@@ -285,9 +295,6 @@ class TileServer(object):
             # render process and will be saved along with the JSON format.
             if format != json_format:
                 wanted_formats.append(format)
-
-        tile_size = request_data.tile_size
-        meta_coord, offset = self.coord_split(coord, tile_size)
 
         nominal_zoom = coord.zoom
         cut_coords = []
@@ -320,14 +327,15 @@ class TileServer(object):
             'unexpected number of tiles: %d, wanted %d' \
             % (len(formatted_tiles_all), expected_tile_count)
 
-        # store tile with data for all layers to the cache, so that we can read
-        # it all back for the dynamic layer request above.
-        self.store_tile(meta_coord, wanted_formats, formatted_tiles_all)
+        if interesting_tile:
+            # store tile with data for all layers to the cache, so that we can
+            # read it all back for the dynamic layer request above.
+            self.store_tile(meta_coord, wanted_formats, formatted_tiles_all)
 
-        # enqueue the coordinate to ensure other formats get processed
-        if self.sqs_queue and coord.zoom <= 20:
-            self.io_pool.apply_async(
-                async_enqueue, (self.sqs_queue, meta_coord,))
+            # enqueue the coordinate to ensure other formats get processed
+            if self.sqs_queue and coord.zoom <= 20:
+                self.io_pool.apply_async(
+                    async_enqueue, (self.sqs_queue, meta_coord,))
 
         if layer_spec == 'all':
             tile_data = self.extract_tile_data(
@@ -668,12 +676,13 @@ def create_tileserver_from_config(config):
         metatile_store_originals = metatile_config.get(
             'store_metatile_and_originals')
     path_tile_size = config.get('path_tile_size')
+    max_interesting_zoom = config.get('max_interesting_zoom')
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, redis_cache_index, sqs_queue, buffer_cfg, formats,
         health_checker, add_cors_headers, metatile_size,
-        metatile_store_originals, path_tile_size)
+        metatile_store_originals, path_tile_size, max_interesting_zoom)
     return tile_server
 
 
