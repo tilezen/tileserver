@@ -283,7 +283,7 @@ class TileServer(object):
         # update the tiles of interest set with the coordinate
         if self.redis_cache_index and interesting_tile:
             self.io_pool.apply_async(async_update_tiles_of_interest,
-                                     (self.redis_cache_index, coord))
+                                     (self.redis_cache_index, meta_coord))
 
         if self.using_metatiles():
             # make all formats when making metatiles
