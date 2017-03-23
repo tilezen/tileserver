@@ -9,11 +9,13 @@ v1.4.0
     * Adds tile pixel size as a configurable option
     * Query the DataFetcher at nominal zoom, which is the same as the coordinate zoom for tileserver
     * Pass nominal zoom explicitly to process_coord
-* Don't reformat if we already have the format and layers we want
-* Clamp tile requests to 0/0/0 to disallow negative zoom requests
-* Catch Exceptions when reading tile data and log them
-* Fix code to add metatile coordinate to tiles of interest (TOI) list
-* Fix gitignore to more pythonic
+* Enhancements:
+    * Don't reformat if we already have the format and layers we want
+    * Clamp tile requests to 0/0/0 to disallow negative zoom requests
+    * Catch Exceptions when reading tile data and log them
+* Bug fixes:
+    * Fix code to add metatile coordinate to tiles of interest (TOI) list
+    * Fix gitignore to more pythonic
 
 v1.3.0
 ------
