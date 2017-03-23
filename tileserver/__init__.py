@@ -472,14 +472,23 @@ class TileServer(object):
         tile_size_zoom = int(math.log(request_tile_size, 2))
         delta_zoom = metatile_zoom - tile_size_zoom
 
-        meta_coord = Coordinate(
-            zoom=request_coord.zoom - delta_zoom,
-            column=request_coord.column >> delta_zoom,
-            row=request_coord.row >> delta_zoom)
-        offset_coord = Coordinate(
-            zoom=delta_zoom,
-            column=request_coord.column - (meta_coord.column << delta_zoom),
-            row=request_coord.row - (meta_coord.row << delta_zoom))
+        # if the metatile would have a zoom of less than zero, then clamp to
+        # zero. this means returning a tile at the wrong nominal zoom, but
+        # that might be preferable to not returning a tile at all.
+        if request_coord.zoom < delta_zoom:
+            meta_coord = Coordinate(0, 0, 0)
+            offset_coord = Coordinate(0, 0, 0)
+
+        else:
+            meta_coord = Coordinate(
+                zoom=request_coord.zoom - delta_zoom,
+                column=request_coord.column >> delta_zoom,
+                row=request_coord.row >> delta_zoom)
+            offset_coord = Coordinate(
+                zoom=delta_zoom,
+                column=(request_coord.column -
+                        (meta_coord.column << delta_zoom)),
+                row=request_coord.row - (meta_coord.row << delta_zoom))
 
         return meta_coord, offset_coord
 
