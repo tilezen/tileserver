@@ -3,16 +3,17 @@ CHANGELOG
 
 v1.4.0
 ------
-* Fix gitignore to more pythonic.
-* Pass nominal zoom explicitly to process_coord.
-* Query the DataFetcher at nominal zoom, which is the same as the coordinate zoom for tileserver.
-* Update tileserver for change in metatile function name and signature.
-* Add support for 2x2 metatiles to tileserver.
-* Don't reformat if we already have the format and layers we want.
-* Make tile size configurable.
-* Catch Exceptions when reading tile data and log it.
-* Clamp to 0/0/0.
-* Fix code to add metatile coordinate to TOI.
+* Add support for 2x2 metatiles
+    * This extends the early 1x1 metatile work that landed in `v1.1.0`
+    * New support for 512 pixel tiles, and preserves support for 256 pixel tiles (within the same 2x2 metatile ZIP bundle)
+    * Adds tile pixel size as a configurable option
+    * Query the DataFetcher at nominal zoom, which is the same as the coordinate zoom for tileserver
+    * Pass nominal zoom explicitly to process_coord
+* Don't reformat if we already have the format and layers we want
+* Clamp tile requests to 0/0/0 to disallow negative zoom requests
+* Catch Exceptions when reading tile data and log them
+* Fix code to add metatile coordinate to tiles of interest (TOI) list
+* Fix gitignore to more pythonic
 
 v1.3.0
 ------
