@@ -2,7 +2,6 @@ from collections import namedtuple
 from cStringIO import StringIO
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
-from tilequeue.command import make_queue
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format, zip_format, topojson_format, \
@@ -17,7 +16,7 @@ from tilequeue.tile import serialize_coord
 from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
-from tilequeue.metatile import make_metatiles, extract_metatile
+from tilequeue.metatile import extract_metatile
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
 import ujson as json
@@ -192,7 +191,7 @@ class TileServer(object):
 
     def __init__(self, layer_config, extensions, data_fetcher,
                  post_process_data, io_pool, store, redis_cache_index,
-                 sqs_queue, buffer_cfg, formats, health_checker=None,
+                 buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
                  metatile_store_originals=False, path_tile_size=None,
                  max_interesting_zoom=None):
@@ -203,7 +202,6 @@ class TileServer(object):
         self.io_pool = io_pool
         self.store = store
         self.redis_cache_index = redis_cache_index
-        self.sqs_queue = sqs_queue
         self.buffer_cfg = buffer_cfg
         self.formats = formats
         self.health_checker = health_checker
@@ -275,16 +273,6 @@ class TileServer(object):
         tile_size = request_data.tile_size
         meta_coord, offset = self.coord_split(coord, tile_size)
 
-        # only add tiles to the TOI and store them up to this zoom level.
-        # anything at higher zooms can be generated, but should not be stored
-        # or kept up to date.
-        interesting_tile = meta_coord.zoom <= self.max_interesting_zoom
-
-        # update the tiles of interest set with the coordinate
-        if self.redis_cache_index and interesting_tile:
-            self.io_pool.apply_async(async_update_tiles_of_interest,
-                                     (self.redis_cache_index, meta_coord))
-
         if self.using_metatiles():
             # make all formats when making metatiles
             wanted_formats = self.formats
@@ -326,16 +314,6 @@ class TileServer(object):
         assert len(formatted_tiles_all) == expected_tile_count, \
             'unexpected number of tiles: %d, wanted %d' \
             % (len(formatted_tiles_all), expected_tile_count)
-
-        if interesting_tile:
-            # store tile with data for all layers to the cache, so that we can
-            # read it all back for the dynamic layer request above.
-            self.store_tile(meta_coord, wanted_formats, formatted_tiles_all)
-
-            # enqueue the coordinate to ensure other formats get processed
-            if self.sqs_queue and coord.zoom <= 20:
-                self.io_pool.apply_async(
-                    async_enqueue, (self.sqs_queue, meta_coord,))
 
         if layer_spec == 'all':
             tile_data = self.extract_tile_data(
@@ -383,30 +361,6 @@ class TileServer(object):
             tile_data = reformat_selected_layers(
                 tile_data, layer_data, coord, format, self.buffer_cfg)
 
-        if layer_spec == 'all':
-            # for the all layer, since the json format existed, we should also
-            # save the requested format too to allow the caches to serve it
-            # directly in subsequent requests we'll guard against re-saving
-            # json onto itself though, which may be possible through a race
-            # condition
-            #
-            # we can't store if we're using metatiles, as the metatile should
-            # already contains all the formats, and might contain more than
-            # one coordinate!
-            if format != json_format and not self.using_metatiles():
-                self.io_pool.apply_async(
-                    async_store, (self.store, tile_data, coord, format,
-                                  'all'))
-
-            # additionally, we'll want to enqueue the tile onto sqs to
-            # ensure that the other formats get processed too.
-            #
-            # note that we enqueue the _meta_ coord, as this is the unit of
-            # work when we're using metatiles.
-            if self.sqs_queue:
-                self.io_pool.apply_async(
-                    async_enqueue, (self.sqs_queue, meta_coord,))
-
         return tile_data
 
     def extract_tile_data(self, coord, fmt, formatted_tiles_all):
@@ -416,24 +370,6 @@ class TileServer(object):
 
         raise KeyError("Unable to find format %r at coordinate %r in "
                        "formatted tiles." % (fmt, coord))
-
-    def store_tile(self, coord, wanted_formats, formatted_tiles_all):
-        if not self.store or coord.zoom > 20:
-            return
-
-        if self.using_metatiles():
-            metatiles = make_metatiles(
-                self.metatile_size, formatted_tiles_all)
-            for tile in metatiles:
-                self.io_pool.apply_async(
-                    async_store, (self.store, tile['tile'], tile['coord'],
-                                  tile['format'], 'all'))
-
-        if not self.metatile_size or self.metatile_store_originals:
-            for tile in formatted_tiles_all:
-                self.io_pool.apply_async(
-                    async_store, (self.store, tile['tile'], coord,
-                                  tile['format'], 'all'))
 
     def read_tile(self, coord, offset=None):
         if self.using_metatiles():
@@ -499,54 +435,6 @@ class TileServer(object):
                 row=request_coord.row - (meta_coord.row << delta_zoom))
 
         return meta_coord, offset_coord
-
-
-def async_store(store, tile_data, coord, format, layer):
-    """update cache store with tile_data"""
-    try:
-        store.write_tile(tile_data, coord, format, layer)
-    except:
-        stacktrace = format_stacktrace_one_line()
-        print 'Error storing coord %s with format %s: %s' % (
-            serialize_coord(coord), format.extension, stacktrace)
-
-
-def async_update_tiles_of_interest(redis_cache_index, coord):
-    """update tiles of interest set
-
-    The tiles of interest represent all tiles that will get processed
-    on osm diffs. Our policy is to cache tiles up to zoom level 20. As
-    an optimization, because the queries only change up until zoom
-    level 16, ie they are the same for z16+, we enqueue work at z16,
-    and the higher zoom tiles get generated by cutting the z16 tile
-    appropriately. This means that when we receive requests for tiles
-    > z16, we need to also track the corresponding tile at z16,
-    otherwise those tiles would never get regenerated.
-    """
-    try:
-        if coord.zoom <= 20:
-            redis_cache_index.index_coord(coord)
-        if coord.zoom > 16:
-            coord_at_z16 = coord.zoomTo(16).container()
-            redis_cache_index.index_coord(coord_at_z16)
-    except:
-        stacktrace = format_stacktrace_one_line()
-        print 'Error updating tiles of interest for coord %s: %s\n' % (
-            serialize_coord(coord), stacktrace)
-
-
-def async_enqueue(sqs_queue, coord):
-    """enqueue a coordinate for offline processing
-
-    This ensures that when we receive a request for a tile format that
-    hasn't been generated yet, we create the other formats eventually.
-    """
-    try:
-        sqs_queue.enqueue(coord)
-    except:
-        stacktrace = format_stacktrace_one_line()
-        print 'Error enqueueing coord %s: %s\n' % (
-            serialize_coord(coord), stacktrace)
 
 
 class LayerConfig(object):
@@ -651,7 +539,6 @@ def create_tileserver_from_config(config):
             store = make_store(store_type, store_name, store_config)
 
     redis_cache_index = None
-    sqs_queue = None
     redis_config = config.get('redis')
     if redis_config:
         from redis import StrictRedis
@@ -661,13 +548,6 @@ def create_tileserver_from_config(config):
         redis_db = redis_config.get('db', 0)
         redis_client = StrictRedis(redis_host, redis_port, redis_db)
         redis_cache_index = RedisCacheIndex(redis_client)
-
-        queue_config = config.get('queue')
-        if queue_config:
-            queue_type = queue_config.get('type')
-            queue_name = queue_config.get('name')
-            sqs_queue = make_queue(queue_type, queue_name, queue_config,
-                                   redis_client)
 
     health_checker = None
     health_check_config = config.get('health')
@@ -689,7 +569,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, sqs_queue, buffer_cfg, formats,
+        store, redis_cache_index, buffer_cfg, formats,
         health_checker, add_cors_headers, metatile_size,
         metatile_store_originals, path_tile_size, max_interesting_zoom)
     return tile_server
