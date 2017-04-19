@@ -1,6 +1,12 @@
 CHANGELOG
 =========
 
+v2.0.0
+------
+* Remove tiles of interest-related code (See [#85](https://github.com/tilezen/tileserver/pull/85))
+    * Remove support for adding requested tiles to the tiles of interest set
+    * Remove support for storing the result of tileserver rendering
+
 v1.4.0
 ------
 * Add support for 2x2 metatiles
