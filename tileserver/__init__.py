@@ -190,7 +190,7 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, extensions, data_fetcher,
-                 post_process_data, io_pool, store, redis_cache_index,
+                 post_process_data, io_pool, store,
                  buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
                  metatile_store_originals=False, path_tile_size=None,
@@ -201,7 +201,6 @@ class TileServer(object):
         self.post_process_data = post_process_data
         self.io_pool = io_pool
         self.store = store
-        self.redis_cache_index = redis_cache_index
         self.buffer_cfg = buffer_cfg
         self.formats = formats
         self.health_checker = health_checker
@@ -538,17 +537,6 @@ def create_tileserver_from_config(config):
         if store_type and store_name:
             store = make_store(store_type, store_name, store_config)
 
-    redis_cache_index = None
-    redis_config = config.get('redis')
-    if redis_config:
-        from redis import StrictRedis
-        from tilequeue.cache import RedisCacheIndex
-        redis_host = redis_config.get('host', 'localhost')
-        redis_port = redis_config.get('port', 6379)
-        redis_db = redis_config.get('db', 0)
-        redis_client = StrictRedis(redis_host, redis_port, redis_db)
-        redis_cache_index = RedisCacheIndex(redis_client)
-
     health_checker = None
     health_check_config = config.get('health')
     if health_check_config:
@@ -569,9 +557,9 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, redis_cache_index, buffer_cfg, formats,
-        health_checker, add_cors_headers, metatile_size,
-        metatile_store_originals, path_tile_size, max_interesting_zoom)
+        store, buffer_cfg, formats, health_checker, add_cors_headers,
+        metatile_size, metatile_store_originals, path_tile_size,
+        max_interesting_zoom)
     return tile_server
 
 
