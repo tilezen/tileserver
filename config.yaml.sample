@@ -44,8 +44,3 @@ health:
 # store:
 #   type: directory
 #   name: tiles
-
-# additionally, `redis` and `queue` configuration blocks may be
-# optionally specified as well. See the tilequeue sample config for
-# details. These are used to manage the tiles of interest and offline
-# processing queues.
