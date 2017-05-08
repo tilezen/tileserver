@@ -59,6 +59,23 @@ class FileCacheTests(unittest.TestCase):
         c.obtain_lock(coord)
         c.release_lock(coord)
 
+    def test_contextmanager_lock(self):
+        from ModestMaps.Core import Coordinate
+        from tileserver.cache import FileCache, LockTimeout
+
+        coord = Coordinate(0, 0, 0)
+        c = FileCache('foo')
+
+        # A plain 'ol lock should work without exception
+        with c.lock(coord):
+            pass
+
+        with c.lock(coord):
+            with self.assertRaises(LockTimeout):
+                # A second lock on the same coord should time out
+                with c.lock(coord, timeout=1):
+                    pass
+
     def test_set_get(self):
         import os
         from ModestMaps.Core import Coordinate
@@ -132,6 +149,23 @@ class RedisCacheTests(unittest.TestCase):
             c.release_lock(coord)
 
         c.obtain_lock(coord)
+
+    def test_contextmanager_lock(self):
+        from ModestMaps.Core import Coordinate
+        from tileserver.cache import RedisCache, LockTimeout
+
+        coord = Coordinate(0, 0, 0)
+        c = RedisCache(self.redis)
+
+        # A plain 'ol lock should work without exception
+        with c.lock(coord):
+            pass
+
+        with c.lock(coord):
+            with self.assertRaises(LockTimeout):
+                # A second lock on the same coord should time out
+                with c.lock(coord, timeout=1):
+                    pass
 
     def test_set_get(self):
         from ModestMaps.Core import Coordinate

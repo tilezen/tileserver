@@ -1,6 +1,7 @@
 import errno
 import os
 import time
+from contextlib import contextmanager
 from string import zfill
 
 
@@ -102,6 +103,14 @@ class RedisCache(object):
         key = self.generate_key('lock', coord)
         self.client.delete(key)
 
+    @contextmanager
+    def lock(self, coord, **kwargs):
+        self.obtain_lock(coord, **kwargs)
+        try:
+            yield self
+        finally:
+            self.release_lock(coord)
+
     def set(self, coord, data):
         key = self.generate_key('data', coord)
         self.client.set(key, data)
@@ -179,6 +188,14 @@ class FileCache(object):
             if e.errno != errno.ENOENT:
                 # re-raise exception if a different error occurred
                 raise
+
+    @contextmanager
+    def lock(self, coord, **kwargs):
+        try:
+            self.obtain_lock(coord, **kwargs)
+            yield
+        finally:
+            self.release_lock(coord)
 
     def set(self, coord, data):
         key = self.generate_key('data', coord)
