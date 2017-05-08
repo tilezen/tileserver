@@ -57,6 +57,7 @@ class FileCacheTests(unittest.TestCase):
 
         # After releasing, obtaining the lock from "client A" should work
         c.obtain_lock(coord)
+        c.release_lock(coord)
 
     def test_set_get(self):
         import os
