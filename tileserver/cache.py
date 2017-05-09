@@ -45,38 +45,38 @@ class LockTimeout(BaseException):
 
 
 class BaseCache(object):
-    def obtain_lock(self, coord, **kwargs):
+    def obtain_lock(self, coord, fmt, **kwargs):
         raise NotImplemented()
 
-    def release_lock(self, coord):
+    def release_lock(self, coord, fmt):
         raise NotImplemented()
 
-    def set(self, coord, data):
+    def set(self, coord, fmt, data):
         raise NotImplemented()
 
-    def get(self, coord):
+    def get(self, coord, fmt):
         raise NotImplemented()
 
     @contextmanager
-    def lock(self, coord, **kwargs):
-        self.obtain_lock(coord, **kwargs)
+    def lock(self, coord, fmt, **kwargs):
+        self.obtain_lock(coord, fmt, **kwargs)
         try:
             yield self
         finally:
-            self.release_lock(coord)
+            self.release_lock(coord, fmt)
 
 
 class NullCache(BaseCache):
-    def obtain_lock(self, coord, **kwargs):
+    def obtain_lock(self, coord, fmt, **kwargs):
         return
 
-    def release_lock(self, coord):
+    def release_lock(self, coord, fmt):
         return
 
-    def set(self, coord, data):
+    def set(self, coord, fmt, data):
         return
 
-    def get(self, coord):
+    def get(self, coord, fmt):
         return None
 
 
@@ -86,16 +86,17 @@ class RedisCache(BaseCache):
         self.timeout = kwargs.get('timeout') or 10
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
-    def _generate_key(self, key_type, coord):
+    def _generate_key(self, key_type, coord, fmt):
         return '{}.{}.{}-{}-{}'.format(
             self.key_prefix,
             key_type,
+            fmt.extension,
             coord.zoom,
             coord.column,
             coord.row,
         )
 
-    def obtain_lock(self, coord, **kwargs):
+    def obtain_lock(self, coord, fmt, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -112,7 +113,7 @@ class RedisCache(BaseCache):
         (https://chris-lamb.co.uk/posts/distributing-locking-python-and-redis)
 
         """
-        key = self._generate_key('lock', coord)
+        key = self._generate_key('lock', coord, fmt)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -135,16 +136,16 @@ class RedisCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord):
-        key = self._generate_key('lock', coord)
+    def release_lock(self, coord, fmt):
+        key = self._generate_key('lock', coord, fmt)
         self.client.delete(key)
 
-    def set(self, coord, data):
-        key = self._generate_key('data', coord)
+    def set(self, coord, fmt, data):
+        key = self._generate_key('data', coord, fmt)
         self.client.set(key, data)
 
-    def get(self, coord):
-        key = self._generate_key('data', coord)
+    def get(self, coord, fmt):
+        key = self._generate_key('data', coord, fmt)
         return self.client.get(key)
 
 
@@ -152,7 +153,7 @@ class FileCache(BaseCache):
     def __init__(self, file_prefix, **kwargs):
         self.prefix = file_prefix
 
-    def _generate_key(self, key_type, coord):
+    def _generate_key(self, key_type, coord, fmt):
         x_fill = zfill(coord.column, 9)
         y_fill = zfill(coord.row, 9)
 
@@ -164,7 +165,7 @@ class FileCache(BaseCache):
             x_fill[6:9],
             y_fill[0:3],
             y_fill[3:6],
-            '{}.{}'.format(y_fill[6:9], key_type),
+            '{}.{}.{}'.format(y_fill[6:9], fmt.extension, key_type),
         )
 
     def _acquire(self, key):
@@ -177,7 +178,7 @@ class FileCache(BaseCache):
             with open(key, 'w'):
                 return True
 
-    def obtain_lock(self, coord, **kwargs):
+    def obtain_lock(self, coord, fmt, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -191,7 +192,7 @@ class FileCache(BaseCache):
                        giving up and throwing a ``LockTimeout`` exception. A
                        value of 0 means to never wait.
         """
-        key = self._generate_key('lock', coord)
+        key = self._generate_key('lock', coord, fmt)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -207,8 +208,8 @@ class FileCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord):
-        key = self._generate_key('lock', coord)
+    def release_lock(self, coord, fmt):
+        key = self._generate_key('lock', coord, fmt)
         try:
             os.remove(key)
         except OSError as e:
@@ -217,15 +218,15 @@ class FileCache(BaseCache):
                 # re-raise exception if a different error occurred
                 raise
 
-    def set(self, coord, data):
-        key = self._generate_key('data', coord)
+    def set(self, coord, fmt, data):
+        key = self._generate_key('data', coord, fmt)
         directory = os.path.dirname(key)
         mkdir_p(directory)
 
         with open(key, 'w') as f:
             f.write(data)
 
-    def get(self, coord):
-        key = self._generate_key('data', coord)
+    def get(self, coord, fmt):
+        key = self._generate_key('data', coord, fmt)
         with open(key, 'r') as f:
             return f.read()
