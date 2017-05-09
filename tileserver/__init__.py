@@ -17,6 +17,7 @@ from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
 from tilequeue.metatile import extract_metatile
+from tileserver.cache import NullCache
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
 import ujson as json
@@ -190,17 +191,18 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, extensions, data_fetcher,
-                 post_process_data, io_pool, store,
+                 post_process_data, io_pool, store, cache,
                  buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
                  metatile_store_originals=False, path_tile_size=None,
-                 max_interesting_zoom=None, cache=False):
+                 max_interesting_zoom=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
         self.io_pool = io_pool
         self.store = store
+        self.cache = cache
         self.buffer_cfg = buffer_cfg
         self.formats = formats
         self.health_checker = health_checker
@@ -548,6 +550,21 @@ def create_tileserver_from_config(config):
         if store_type and store_name:
             store = make_store(store_type, store_name, store_config)
 
+    cache = NullCache()
+    cache_config = config.get('cache')
+    if cache_config:
+        cache_type = cache_config.get('type')
+        if cache_type == 'redis':
+            import redis
+            from tileserver.cache import RedisCache
+            redis_config = cache_config.get('redis', {})
+            redis_client = redis.from_url(redis_config.get('url'))
+            cache = RedisCache(redis_client)
+        elif cache_type == 'file':
+            from tileserver.cache import FileCache
+            file_config = cache_config.get('file', {})
+            cache = FileCache(file_config.get('prefix'))
+
     health_checker = None
     health_check_config = config.get('health')
     if health_check_config:
@@ -568,7 +585,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, buffer_cfg, formats, health_checker, add_cors_headers,
+        store, cache, buffer_cfg, formats, health_checker, add_cors_headers,
         metatile_size, metatile_store_originals, path_tile_size,
         max_interesting_zoom)
     return tile_server

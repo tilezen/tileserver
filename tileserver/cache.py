@@ -44,13 +44,49 @@ class LockTimeout(BaseException):
     pass
 
 
-class RedisCache(object):
+class BaseCache(object):
+    def obtain_lock(self, coord, **kwargs):
+        raise NotImplemented()
+
+    def release_lock(self, coord):
+        raise NotImplemented()
+
+    def set(self, coord, data):
+        raise NotImplemented()
+
+    def get(self, coord):
+        raise NotImplemented()
+
+    @contextmanager
+    def lock(self, coord, **kwargs):
+        self.obtain_lock(coord, **kwargs)
+        try:
+            yield self
+        finally:
+            self.release_lock(coord)
+
+
+class NullCache(BaseCache):
+    def obtain_lock(self, coord, **kwargs):
+        return
+
+    def release_lock(self, coord):
+        return
+
+    def set(self, coord, data):
+        return
+
+    def get(self, coord):
+        return None
+
+
+class RedisCache(BaseCache):
     def __init__(self, redis_client, **kwargs):
         self.client = redis_client
         self.timeout = kwargs.get('timeout') or 10
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
-    def generate_key(self, key_type, coord):
+    def _generate_key(self, key_type, coord):
         return '{}.{}.{}-{}-{}'.format(
             self.key_prefix,
             key_type,
@@ -76,7 +112,7 @@ class RedisCache(object):
         (https://chris-lamb.co.uk/posts/distributing-locking-python-and-redis)
 
         """
-        key = self.generate_key('lock', coord)
+        key = self._generate_key('lock', coord)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -100,31 +136,23 @@ class RedisCache(object):
         raise LockTimeout("Timeout whilst waiting for a lock")
 
     def release_lock(self, coord):
-        key = self.generate_key('lock', coord)
+        key = self._generate_key('lock', coord)
         self.client.delete(key)
 
-    @contextmanager
-    def lock(self, coord, **kwargs):
-        self.obtain_lock(coord, **kwargs)
-        try:
-            yield self
-        finally:
-            self.release_lock(coord)
-
     def set(self, coord, data):
-        key = self.generate_key('data', coord)
+        key = self._generate_key('data', coord)
         self.client.set(key, data)
 
     def get(self, coord):
-        key = self.generate_key('data', coord)
+        key = self._generate_key('data', coord)
         return self.client.get(key)
 
 
-class FileCache(object):
+class FileCache(BaseCache):
     def __init__(self, file_prefix, **kwargs):
         self.prefix = file_prefix
 
-    def generate_key(self, key_type, coord):
+    def _generate_key(self, key_type, coord):
         x_fill = zfill(coord.column, 9)
         y_fill = zfill(coord.row, 9)
 
@@ -163,7 +191,7 @@ class FileCache(object):
                        giving up and throwing a ``LockTimeout`` exception. A
                        value of 0 means to never wait.
         """
-        key = self.generate_key('lock', coord)
+        key = self._generate_key('lock', coord)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -180,7 +208,7 @@ class FileCache(object):
         raise LockTimeout("Timeout whilst waiting for a lock")
 
     def release_lock(self, coord):
-        key = self.generate_key('lock', coord)
+        key = self._generate_key('lock', coord)
         try:
             os.remove(key)
         except OSError as e:
@@ -189,16 +217,8 @@ class FileCache(object):
                 # re-raise exception if a different error occurred
                 raise
 
-    @contextmanager
-    def lock(self, coord, **kwargs):
-        try:
-            self.obtain_lock(coord, **kwargs)
-            yield
-        finally:
-            self.release_lock(coord)
-
     def set(self, coord, data):
-        key = self.generate_key('data', coord)
+        key = self._generate_key('data', coord)
         directory = os.path.dirname(key)
         mkdir_p(directory)
 
@@ -206,6 +226,6 @@ class FileCache(object):
             f.write(data)
 
     def get(self, coord):
-        key = self.generate_key('data', coord)
+        key = self._generate_key('data', coord)
         with open(key, 'r') as f:
             return f.read()
