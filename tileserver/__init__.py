@@ -17,6 +17,7 @@ from tilequeue.transform import mercator_point_to_lnglat
 from tilequeue.transform import transform_feature_layers_shape
 from tilequeue.utils import format_stacktrace_one_line
 from tilequeue.metatile import extract_metatile
+from tileserver.cache import NullCache
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
 import ujson as json
@@ -190,7 +191,7 @@ class TileServer(object):
     propagate_errors = False
 
     def __init__(self, layer_config, extensions, data_fetcher,
-                 post_process_data, io_pool, store,
+                 post_process_data, io_pool, store, cache,
                  buffer_cfg, formats, health_checker=None,
                  add_cors_headers=False, metatile_size=None,
                  metatile_store_originals=False, path_tile_size=None,
@@ -201,6 +202,7 @@ class TileServer(object):
         self.post_process_data = post_process_data
         self.io_pool = io_pool
         self.store = store
+        self.cache = cache
         self.buffer_cfg = buffer_cfg
         self.formats = formats
         self.health_checker = health_checker
@@ -251,10 +253,12 @@ class TileServer(object):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
+
         request_data = parse_request_path(request.path, self.extensions,
                                           self.path_tile_size)
         if request_data is None:
             return self.generate_404(request)
+
         layer_spec = request_data.layer_spec
         layer_data = parse_layer_spec(request_data.layer_spec,
                                       self.layer_config)
@@ -264,68 +268,77 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        tile_data = self.reformat_from_stored_json(request_data, layer_data)
-        if tile_data is not None:
-            return self.create_response(
-                request, 200, tile_data, format.mimetype)
+        with self.cache.lock(coord, format):
+            tile_data = self.cache.get(coord, format)
 
-        tile_size = request_data.tile_size
-        meta_coord, offset = self.coord_split(coord, tile_size)
+            if tile_data is None:
+                tile_data = self.reformat_from_stored_json(
+                    request_data, layer_data)
 
-        if self.using_metatiles():
-            # make all formats when making metatiles
-            wanted_formats = self.formats
+            if tile_data is not None:
+                return self.create_response(
+                    request, 200, tile_data, format.mimetype)
 
-        else:
-            wanted_formats = [json_format]
-            # add the request format, so that it gets created by the tile
-            # render process and will be saved along with the JSON format.
-            if format != json_format:
-                wanted_formats.append(format)
+            tile_size = request_data.tile_size
+            meta_coord, offset = self.coord_split(coord, tile_size)
 
-        nominal_zoom = coord.zoom
-        cut_coords = []
-        if self.using_metatiles():
-            nominal_zoom = meta_coord.zoom + self.metatile_zoom
-            if self.metatile_zoom > 0:
-                cut_coords.extend(
-                    coord_children_range(meta_coord, nominal_zoom))
+            if self.using_metatiles():
+                # make all formats when making metatiles
+                wanted_formats = self.formats
 
-        # fetch data for all layers, even if the request was for a partial set.
-        # this ensures that we can always store the result, allowing for reuse,
-        # but also that any post-processing functions which might have
-        # dependencies on multiple layers will still work properly (e.g:
-        # buildings or roads layer being cut against landuse).
-        unpadded_bounds = coord_to_mercator_bounds(meta_coord)
-        feature_data_all = self.data_fetcher(
-            nominal_zoom, unpadded_bounds, self.layer_config.all_layers)
+            else:
+                wanted_formats = [json_format]
+                # add the request format, so that it gets created by the tile
+                # render process and will be saved along with the JSON format.
+                if format != json_format:
+                    wanted_formats.append(format)
 
-        formatted_tiles_all, extra_data = process_coord(
-            meta_coord,
-            nominal_zoom,
-            feature_data_all['feature_layers'],
-            self.post_process_data,
-            wanted_formats,
-            feature_data_all['unpadded_bounds'],
-            cut_coords, self.buffer_cfg)
+            nominal_zoom = coord.zoom
+            cut_coords = []
+            if self.using_metatiles():
+                nominal_zoom = meta_coord.zoom + self.metatile_zoom
+                if self.metatile_zoom > 0:
+                    cut_coords.extend(
+                        coord_children_range(meta_coord, nominal_zoom))
 
-        expected_tile_count = len(wanted_formats) * (1 + len(cut_coords))
-        assert len(formatted_tiles_all) == expected_tile_count, \
-            'unexpected number of tiles: %d, wanted %d' \
-            % (len(formatted_tiles_all), expected_tile_count)
+            # fetch data for all layers, even if the request was for a partial
+            # set. this ensures that we can always store the result, allowing
+            # for reuse, but also that any post-processing functions which
+            # might have dependencies on multiple layers will still work
+            # properly (e.g: buildings or roads layer being cut against
+            # landuse).
+            unpadded_bounds = coord_to_mercator_bounds(meta_coord)
+            feature_data_all = self.data_fetcher(
+                nominal_zoom, unpadded_bounds, self.layer_config.all_layers)
 
-        if layer_spec == 'all':
-            tile_data = self.extract_tile_data(
-                coord, format, formatted_tiles_all)
+            formatted_tiles_all, extra_data = process_coord(
+                meta_coord,
+                nominal_zoom,
+                feature_data_all['feature_layers'],
+                self.post_process_data,
+                wanted_formats,
+                feature_data_all['unpadded_bounds'],
+                cut_coords, self.buffer_cfg)
 
-        else:
-            # select the data that the user actually asked for from the
-            # JSON/all tile that we just created.
-            json_data_all = self.extract_tile_data(
-                coord, json_format, formatted_tiles_all)
+            expected_tile_count = len(wanted_formats) * (1 + len(cut_coords))
+            assert len(formatted_tiles_all) == expected_tile_count, \
+                'unexpected number of tiles: %d, wanted %d' \
+                % (len(formatted_tiles_all), expected_tile_count)
 
-            tile_data = reformat_selected_layers(
-                json_data_all, layer_data, coord, format, self.buffer_cfg)
+            if layer_spec == 'all':
+                tile_data = self.extract_tile_data(
+                    coord, format, formatted_tiles_all)
+
+            else:
+                # select the data that the user actually asked for from the
+                # JSON/all tile that we just created.
+                json_data_all = self.extract_tile_data(
+                    coord, json_format, formatted_tiles_all)
+
+                tile_data = reformat_selected_layers(
+                    json_data_all, layer_data, coord, format, self.buffer_cfg)
+
+            self.cache.set(coord, format, tile_data)
 
         response = self.create_response(
             request, 200, tile_data, format.mimetype)
@@ -537,6 +550,21 @@ def create_tileserver_from_config(config):
         if store_type and store_name:
             store = make_store(store_type, store_name, store_config)
 
+    cache = NullCache()
+    cache_config = config.get('cache')
+    if cache_config:
+        cache_type = cache_config.get('type')
+        if cache_type == 'redis':
+            import redis
+            from tileserver.cache import RedisCache
+            redis_config = cache_config.get('redis', {})
+            redis_client = redis.from_url(redis_config.get('url'))
+            cache = RedisCache(redis_client)
+        elif cache_type == 'file':
+            from tileserver.cache import FileCache
+            file_config = cache_config.get('file', {})
+            cache = FileCache(file_config.get('prefix'))
+
     health_checker = None
     health_check_config = config.get('health')
     if health_check_config:
@@ -557,7 +585,7 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, buffer_cfg, formats, health_checker, add_cors_headers,
+        store, cache, buffer_cfg, formats, health_checker, add_cors_headers,
         metatile_size, metatile_store_originals, path_tile_size,
         max_interesting_zoom)
     return tile_server

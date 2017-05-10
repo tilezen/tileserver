@@ -38,9 +38,11 @@ health:
   # request path to listen for health checks
   url: /_health
 
-# to cache tiles locally, enable a store. This can be useful when
-# experiencing timeouts for low or mid zoom ranges. See the tilequeue
-# sample config for details.
-# store:
-#   type: directory
-#   name: tiles
+# to cache tiles locally, enable a cache. This can be useful when
+# experiencing timeouts for low or mid zoom ranges.
+# cache:
+#   type: <redis|file|null, default 'null'>
+#   redis:
+#     url: redis://localhost:6379
+#   file:
+#     prefix: directory_prefix
