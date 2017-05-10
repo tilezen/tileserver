@@ -268,8 +268,8 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
 
-        with self.cache.lock(coord):
-            tile_data = self.cache.get(coord)
+        with self.cache.lock(coord, format):
+            tile_data = self.cache.get(coord, format)
 
             if tile_data is None:
                 tile_data = self.reformat_from_stored_json(
@@ -338,7 +338,7 @@ class TileServer(object):
                 tile_data = reformat_selected_layers(
                     json_data_all, layer_data, coord, format, self.buffer_cfg)
 
-            self.cache.set(coord, tile_data)
+            self.cache.set(coord, format, tile_data)
 
         response = self.create_response(
             request, 200, tile_data, format.mimetype)
