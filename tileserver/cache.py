@@ -87,7 +87,7 @@ class RedisCache(BaseCache):
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
     def _generate_key(self, key_type, coord, fmt):
-        return '{}.{}.{}-{}-{}'.format(
+        return '{}.{}.{}-{}-{}-{}'.format(
             self.key_prefix,
             key_type,
             fmt.extension,
