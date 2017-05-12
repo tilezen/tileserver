@@ -228,5 +228,8 @@ class FileCache(BaseCache):
 
     def get(self, coord, fmt):
         key = self._generate_key('data', coord, fmt)
-        with open(key, 'r') as f:
-            return f.read()
+        try:
+            with open(key, 'r') as f:
+                return f.read()
+        except IOError:
+            return None
