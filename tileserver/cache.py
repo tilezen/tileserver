@@ -87,7 +87,7 @@ class RedisCache(BaseCache):
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
     def _generate_key(self, key_type, coord, fmt):
-        return '{}.{}.{}-{}-{}'.format(
+        return '{}.{}.{}-{}-{}-{}'.format(
             self.key_prefix,
             key_type,
             fmt.extension,
@@ -228,5 +228,8 @@ class FileCache(BaseCache):
 
     def get(self, coord, fmt):
         key = self._generate_key('data', coord, fmt)
-        with open(key, 'r') as f:
-            return f.read()
+        try:
+            with open(key, 'r') as f:
+                return f.read()
+        except IOError:
+            return None
