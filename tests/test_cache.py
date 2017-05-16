@@ -38,13 +38,15 @@ class FileCacheTests(unittest.TestCase):
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
 
         c = FileCache('foo')
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(coord, tile_size, layers, fmt)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(coord, tile_size, layers, fmt)
 
     def test_obtain_lock_already_locked(self):
         from ModestMaps.Core import Coordinate
@@ -52,21 +54,23 @@ class FileCacheTests(unittest.TestCase):
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
 
         c = FileCache('foo')
         try:
             # Obtain a lock from "client A"
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(coord, tile_size, layers, fmt)
             with self.assertRaises(LockTimeout):
                 # Locking from "client B" should time out
-                c.obtain_lock(coord, fmt, timeout=1)
+                c.obtain_lock(coord, tile_size, layers, fmt, timeout=1)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(coord, tile_size, layers, fmt)
 
         # After releasing, obtaining the lock from "client A" should work
-        c.obtain_lock(coord, fmt)
-        c.release_lock(coord, fmt)
+        c.obtain_lock(coord, tile_size, layers, fmt)
+        c.release_lock(coord, tile_size, layers, fmt)
 
     def test_contextmanager_lock(self):
         from ModestMaps.Core import Coordinate
@@ -74,18 +78,20 @@ class FileCacheTests(unittest.TestCase):
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
 
         c = FileCache('foo')
 
         # A plain 'ol lock should work without exception
-        with c.lock(coord, fmt):
+        with c.lock(coord, tile_size, layers, fmt):
             pass
 
-        with c.lock(coord, fmt):
+        with c.lock(coord, tile_size, layers, fmt):
             with self.assertRaises(LockTimeout):
                 # A second lock on the same coord should time out
-                with c.lock(coord, fmt, timeout=1):
+                with c.lock(coord, tile_size, layers, fmt, timeout=1):
                     pass
 
     def test_set_get(self):
@@ -95,17 +101,19 @@ class FileCacheTests(unittest.TestCase):
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
 
         tile_data = 'hello world'
 
         c = FileCache('foo')
-        c.set(coord, fmt, tile_data)
-        actual_data = c.get(coord, fmt)
+        c.set(coord, tile_size, layers, fmt, tile_data)
+        actual_data = c.get(coord, tile_size, layers, fmt)
 
         self.assertEquals(tile_data, actual_data)
 
-        key = c._generate_key('data', coord, fmt)
+        key = c._generate_key('data', coord, tile_size, layers, fmt)
         os.remove(key)
         clean_empty_parent_dirs(os.path.dirname(key))
 
@@ -145,13 +153,15 @@ class RedisCacheTests(unittest.TestCase):
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
 
         c = RedisCache(self.redis)
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(coord, tile_size, layers, fmt)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(coord, tile_size, layers, fmt)
 
     def test_obtain_lock_already_locked(self):
         from ModestMaps.Core import Coordinate
@@ -160,16 +170,18 @@ class RedisCacheTests(unittest.TestCase):
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
 
         c = RedisCache(self.redis)
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(coord, tile_size, layers, fmt)
             with self.assertRaises(LockTimeout):
-                c.obtain_lock(coord, fmt, timeout=1)
+                c.obtain_lock(coord, tile_size, layers, fmt, timeout=1)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(coord, tile_size, layers, fmt)
 
-        c.obtain_lock(coord, fmt)
+        c.obtain_lock(coord, tile_size, layers, fmt)
 
     def test_contextmanager_lock(self):
         from ModestMaps.Core import Coordinate
@@ -178,17 +190,19 @@ class RedisCacheTests(unittest.TestCase):
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
 
         c = RedisCache(self.redis)
 
         # A plain 'ol lock should work without exception
-        with c.lock(coord, fmt):
+        with c.lock(coord, tile_size, layers, fmt):
             pass
 
-        with c.lock(coord, fmt):
+        with c.lock(coord, tile_size, layers, fmt):
             with self.assertRaises(LockTimeout):
                 # A second lock on the same coord should time out
-                with c.lock(coord, fmt, timeout=1):
+                with c.lock(coord, tile_size, layers, fmt, timeout=1):
                     pass
 
     def test_set_get(self):
@@ -198,11 +212,14 @@ class RedisCacheTests(unittest.TestCase):
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
         tile_data = 'hello world'
 
         c = RedisCache(self.redis)
-        c.set(coord, fmt, tile_data)
-        actual_data = c.get(coord, fmt)
+        c.set(coord, tile_size, layers, fmt, tile_data)
+        actual_data = c.get(coord, tile_size, layers, fmt)
 
         self.assertEquals(tile_data, actual_data)
-        self.redis.delete(c._generate_key('data', coord, fmt))
+        self.redis.delete(
+            c._generate_key('data', coord, tile_size, layers, fmt))

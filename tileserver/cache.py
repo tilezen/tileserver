@@ -45,38 +45,38 @@ class LockTimeout(BaseException):
 
 
 class BaseCache(object):
-    def obtain_lock(self, coord, fmt, **kwargs):
+    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
         raise NotImplemented()
 
-    def release_lock(self, coord, fmt):
+    def release_lock(self, coord, tile_size, layers, fmt):
         raise NotImplemented()
 
-    def set(self, coord, fmt, data):
+    def set(self, coord, tile_size, layers, fmt, data):
         raise NotImplemented()
 
-    def get(self, coord, fmt):
+    def get(self, coord, tile_size, layers, fmt):
         raise NotImplemented()
 
     @contextmanager
-    def lock(self, coord, fmt, **kwargs):
-        self.obtain_lock(coord, fmt, **kwargs)
+    def lock(self, coord, tile_size, layers, fmt, **kwargs):
+        self.obtain_lock(coord, tile_size, layers, fmt, **kwargs)
         try:
             yield self
         finally:
-            self.release_lock(coord, fmt)
+            self.release_lock(coord, tile_size, layers, fmt)
 
 
 class NullCache(BaseCache):
-    def obtain_lock(self, coord, fmt, **kwargs):
+    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
         return
 
-    def release_lock(self, coord, fmt):
+    def release_lock(self, coord, tile_size, layers, fmt):
         return
 
-    def set(self, coord, fmt, data):
+    def set(self, coord, tile_size, layers, fmt, data):
         return
 
-    def get(self, coord, fmt):
+    def get(self, coord, tile_size, layers, fmt):
         return None
 
 
@@ -86,17 +86,19 @@ class RedisCache(BaseCache):
         self.timeout = kwargs.get('timeout') or 10
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
-    def _generate_key(self, key_type, coord, fmt):
-        return '{}.{}.{}-{}-{}-{}'.format(
+    def _generate_key(self, key_type, coord, tile_size, layers, fmt):
+        return '{}.{}.{}-{}-{}-{}-{}-{}'.format(
             self.key_prefix,
             key_type,
+            tile_size,
+            layers,
             fmt.extension,
             coord.zoom,
             coord.column,
             coord.row,
         )
 
-    def obtain_lock(self, coord, fmt, **kwargs):
+    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -113,7 +115,7 @@ class RedisCache(BaseCache):
         (https://chris-lamb.co.uk/posts/distributing-locking-python-and-redis)
 
         """
-        key = self._generate_key('lock', coord, fmt)
+        key = self._generate_key('lock', coord, tile_size, layers, fmt)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -136,16 +138,16 @@ class RedisCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord, fmt):
-        key = self._generate_key('lock', coord, fmt)
+    def release_lock(self, coord, tile_size, layers, fmt):
+        key = self._generate_key('lock', coord, tile_size, layers, fmt)
         self.client.delete(key)
 
-    def set(self, coord, fmt, data):
-        key = self._generate_key('data', coord, fmt)
+    def set(self, coord, tile_size, layers, fmt, data):
+        key = self._generate_key('data', coord, tile_size, layers, fmt)
         self.client.set(key, data)
 
-    def get(self, coord, fmt):
-        key = self._generate_key('data', coord, fmt)
+    def get(self, coord, tile_size, layers, fmt):
+        key = self._generate_key('data', coord, tile_size, layers, fmt)
         return self.client.get(key)
 
 
@@ -153,12 +155,14 @@ class FileCache(BaseCache):
     def __init__(self, file_prefix, **kwargs):
         self.prefix = file_prefix
 
-    def _generate_key(self, key_type, coord, fmt):
+    def _generate_key(self, key_type, coord, tile_size, layers, fmt):
         x_fill = zfill(coord.column, 9)
         y_fill = zfill(coord.row, 9)
 
         return os.path.join(
             self.prefix,
+            str(tile_size),
+            layers,
             zfill(coord.zoom, 2),
             x_fill[0:3],
             x_fill[3:6],
@@ -178,7 +182,7 @@ class FileCache(BaseCache):
             with open(key, 'w'):
                 return True
 
-    def obtain_lock(self, coord, fmt, **kwargs):
+    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -192,7 +196,7 @@ class FileCache(BaseCache):
                        giving up and throwing a ``LockTimeout`` exception. A
                        value of 0 means to never wait.
         """
-        key = self._generate_key('lock', coord, fmt)
+        key = self._generate_key('lock', coord, tile_size, layers, fmt)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -208,8 +212,8 @@ class FileCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord, fmt):
-        key = self._generate_key('lock', coord, fmt)
+    def release_lock(self, coord, tile_size, layers, fmt):
+        key = self._generate_key('lock', coord, tile_size, layers, fmt)
         try:
             os.remove(key)
         except OSError as e:
@@ -218,16 +222,16 @@ class FileCache(BaseCache):
                 # re-raise exception if a different error occurred
                 raise
 
-    def set(self, coord, fmt, data):
-        key = self._generate_key('data', coord, fmt)
+    def set(self, coord, tile_size, layers, fmt, data):
+        key = self._generate_key('data', coord, tile_size, layers, fmt)
         directory = os.path.dirname(key)
         mkdir_p(directory)
 
         with open(key, 'w') as f:
             f.write(data)
 
-    def get(self, coord, fmt):
-        key = self._generate_key('data', coord, fmt)
+    def get(self, coord, tile_size, layers, fmt):
+        key = self._generate_key('data', coord, tile_size, layers, fmt)
         try:
             with open(key, 'r') as f:
                 return f.read()
