@@ -11,6 +11,7 @@ from tilequeue.process import process_coord_no_format
 from tilequeue.query import DataFetcher
 from tilequeue.tile import coord_to_mercator_bounds
 from tilequeue.utils import format_stacktrace_one_line
+from tileserver.cache import CacheKey
 from tileserver.cache import NullCache
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
@@ -194,9 +195,9 @@ class TileServer(object):
         format = request_data.format
         tile_size = request_data.tile_size
 
-        with self.cache.lock(coord, tile_size, sorted_layer_names, format):
-            tile_data = self.cache.get(
-                coord, tile_size, sorted_layer_names, format)
+        cache_key = CacheKey(coord, tile_size, sorted_layer_names, format)
+        with self.cache.lock(cache_key):
+            tile_data = self.cache.get(cache_key)
 
             if tile_data is not None:
                 return self.create_response(
@@ -244,8 +245,7 @@ class TileServer(object):
             assert len(formatted_tiles) == 1
             tile_data = formatted_tiles[0]['tile']
 
-            self.cache.set(
-                coord, tile_size, sorted_layer_names, format, tile_data)
+            self.cache.set(cache_key, tile_data)
 
         response = self.create_response(
             request, 200, tile_data, format.mimetype)

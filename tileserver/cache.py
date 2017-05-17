@@ -1,6 +1,7 @@
 import errno
 import os
 import time
+from collections import namedtuple
 from contextlib import contextmanager
 from string import zfill
 
@@ -13,6 +14,9 @@ def mkdir_p(path):
             pass
         else:
             raise
+
+
+CacheKey = namedtuple('CacheKey', 'coord tile_size layers fmt')
 
 
 def clean_empty_parent_dirs(path, parent_dir=None):
@@ -45,38 +49,38 @@ class LockTimeout(BaseException):
 
 
 class BaseCache(object):
-    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
+    def obtain_lock(self, cache_key, **kwargs):
         raise NotImplemented()
 
-    def release_lock(self, coord, tile_size, layers, fmt):
+    def release_lock(self, cache_key):
         raise NotImplemented()
 
-    def set(self, coord, tile_size, layers, fmt, data):
+    def set(self, cache_key, data):
         raise NotImplemented()
 
-    def get(self, coord, tile_size, layers, fmt):
+    def get(self, cache_key):
         raise NotImplemented()
 
     @contextmanager
-    def lock(self, coord, tile_size, layers, fmt, **kwargs):
-        self.obtain_lock(coord, tile_size, layers, fmt, **kwargs)
+    def lock(self, cache_key, **kwargs):
+        self.obtain_lock(cache_key, **kwargs)
         try:
             yield self
         finally:
-            self.release_lock(coord, tile_size, layers, fmt)
+            self.release_lock(cache_key)
 
 
 class NullCache(BaseCache):
-    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
+    def obtain_lock(self, cache_key, **kwargs):
         return
 
-    def release_lock(self, coord, tile_size, layers, fmt):
+    def release_lock(self, cache_key):
         return
 
-    def set(self, coord, tile_size, layers, fmt, data):
+    def set(self, cache_key, data):
         return
 
-    def get(self, coord, tile_size, layers, fmt):
+    def get(self, cache_key):
         return None
 
 
@@ -86,19 +90,19 @@ class RedisCache(BaseCache):
         self.timeout = kwargs.get('timeout') or 10
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
 
-    def _generate_key(self, key_type, coord, tile_size, layers, fmt):
+    def _generate_key(self, key_type, cache_key):
         return '{}.{}.{}-{}-{}-{}-{}-{}'.format(
             self.key_prefix,
             key_type,
-            tile_size,
-            layers,
-            fmt.extension,
-            coord.zoom,
-            coord.column,
-            coord.row,
+            cache_key.tile_size,
+            cache_key.layers,
+            cache_key.fmt.extension,
+            cache_key.coord.zoom,
+            cache_key.coord.column,
+            cache_key.coord.row,
         )
 
-    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
+    def obtain_lock(self, cache_key, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -115,7 +119,7 @@ class RedisCache(BaseCache):
         (https://chris-lamb.co.uk/posts/distributing-locking-python-and-redis)
 
         """
-        key = self._generate_key('lock', coord, tile_size, layers, fmt)
+        key = self._generate_key('lock', cache_key)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -138,16 +142,16 @@ class RedisCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord, tile_size, layers, fmt):
-        key = self._generate_key('lock', coord, tile_size, layers, fmt)
+    def release_lock(self, cache_key):
+        key = self._generate_key('lock', cache_key)
         self.client.delete(key)
 
-    def set(self, coord, tile_size, layers, fmt, data):
-        key = self._generate_key('data', coord, tile_size, layers, fmt)
+    def set(self, cache_key, data):
+        key = self._generate_key('data', cache_key)
         self.client.set(key, data)
 
-    def get(self, coord, tile_size, layers, fmt):
-        key = self._generate_key('data', coord, tile_size, layers, fmt)
+    def get(self, cache_key):
+        key = self._generate_key('data', cache_key)
         return self.client.get(key)
 
 
@@ -155,21 +159,21 @@ class FileCache(BaseCache):
     def __init__(self, file_prefix, **kwargs):
         self.prefix = file_prefix
 
-    def _generate_key(self, key_type, coord, tile_size, layers, fmt):
-        x_fill = zfill(coord.column, 9)
-        y_fill = zfill(coord.row, 9)
+    def _generate_key(self, key_type, cache_key):
+        x_fill = zfill(cache_key.coord.column, 9)
+        y_fill = zfill(cache_key.coord.row, 9)
 
         return os.path.join(
             self.prefix,
-            str(tile_size),
-            layers,
-            zfill(coord.zoom, 2),
+            str(cache_key.tile_size),
+            cache_key.layers,
+            zfill(cache_key.coord.zoom, 2),
             x_fill[0:3],
             x_fill[3:6],
             x_fill[6:9],
             y_fill[0:3],
             y_fill[3:6],
-            '{}.{}.{}'.format(y_fill[6:9], fmt.extension, key_type),
+            '{}.{}.{}'.format(y_fill[6:9], cache_key.fmt.extension, key_type),
         )
 
     def _acquire(self, key):
@@ -182,7 +186,7 @@ class FileCache(BaseCache):
             with open(key, 'w'):
                 return True
 
-    def obtain_lock(self, coord, tile_size, layers, fmt, **kwargs):
+    def obtain_lock(self, cache_key, **kwargs):
         """
         Obtains a lock based on the given tile coordinate. By default,
         it will wait/block ``timeout`` seconds before giving up and throwing
@@ -196,7 +200,7 @@ class FileCache(BaseCache):
                        giving up and throwing a ``LockTimeout`` exception. A
                        value of 0 means to never wait.
         """
-        key = self._generate_key('lock', coord, tile_size, layers, fmt)
+        key = self._generate_key('lock', cache_key)
         expires = kwargs.get('expires', 60)
         timeout = kwargs.get('timeout', 10)
 
@@ -212,8 +216,8 @@ class FileCache(BaseCache):
 
         raise LockTimeout("Timeout whilst waiting for a lock")
 
-    def release_lock(self, coord, tile_size, layers, fmt):
-        key = self._generate_key('lock', coord, tile_size, layers, fmt)
+    def release_lock(self, cache_key):
+        key = self._generate_key('lock', cache_key)
         try:
             os.remove(key)
         except OSError as e:
@@ -222,16 +226,16 @@ class FileCache(BaseCache):
                 # re-raise exception if a different error occurred
                 raise
 
-    def set(self, coord, tile_size, layers, fmt, data):
-        key = self._generate_key('data', coord, tile_size, layers, fmt)
+    def set(self, cache_key, data):
+        key = self._generate_key('data', cache_key)
         directory = os.path.dirname(key)
         mkdir_p(directory)
 
         with open(key, 'w') as f:
             f.write(data)
 
-    def get(self, coord, tile_size, layers, fmt):
-        key = self._generate_key('data', coord, tile_size, layers, fmt)
+    def get(self, cache_key):
+        key = self._generate_key('data', cache_key)
         try:
             with open(key, 'r') as f:
                 return f.read()
