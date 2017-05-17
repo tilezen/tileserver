@@ -25,6 +25,7 @@ setup(name='tileserver',
           'tilequeue >= 0.7.1',
           'werkzeug',
       ],
+      test_suite='tests',
       entry_points="""
       # -*- Entry points: -*-
       """,
