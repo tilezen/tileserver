@@ -109,6 +109,11 @@ def parse_layer_spec(layer_spec, layer_config):
         layer_data, unique_layer_names, sorted_layer_names)
 
 
+def calculate_nominal_zoom(zoom, tile_size):
+    assert tile_size >= 1
+    return zoom + tile_size - 1
+
+
 class TileServer(object):
 
     # whether to re-raise errors on request handling
@@ -203,17 +208,16 @@ class TileServer(object):
                 return self.create_response(
                     request, 200, tile_data, format.mimetype)
 
-            meta_coord, offset = self.coord_split(coord, tile_size)
+            nominal_zoom = calculate_nominal_zoom(coord.zoom, tile_size)
 
             cut_coords = ()
-            nominal_zoom = coord.zoom
             # fetch data for all layers, even if the request was for a partial
             # set. this ensures that we can always store the result, allowing
             # for reuse, but also that any post-processing functions which
             # might have dependencies on multiple layers will still work
             # properly (e.g: buildings or roads layer being cut against
             # landuse).
-            unpadded_bounds = coord_to_mercator_bounds(meta_coord)
+            unpadded_bounds = coord_to_mercator_bounds(coord)
             feature_data_all = self.data_fetcher(
                 nominal_zoom, unpadded_bounds, self.layer_config.all_layers)
 
@@ -233,7 +237,8 @@ class TileServer(object):
                 processed_feature_layers = kept_feature_layers
 
             formatted_tiles, extra_data = format_coord(
-                meta_coord,
+                coord,
+                nominal_zoom,
                 processed_feature_layers,
                 (format,),
                 unpadded_bounds,
@@ -250,47 +255,6 @@ class TileServer(object):
         response = self.create_response(
             request, 200, tile_data, format.mimetype)
         return response
-
-    def using_metatiles(self):
-        return self.metatile_size is not None
-
-    def coord_split(self, request_coord, request_tile_size):
-        """
-        A metatile can store many coordinates, which means that the coordinate
-        of the metatile might be different from the coordinate of the tile
-        which was requested. This method splits the tile coordinate into two
-        parts; the metatile part and the "offset" within the metatile.
-        """
-
-        if not self.using_metatiles():
-            return request_coord, None
-
-        assert request_tile_size <= self.metatile_size, \
-            "Request for tile with size greater than the metatile size."
-
-        metatile_zoom = int(math.log(self.metatile_size, 2))
-        tile_size_zoom = int(math.log(request_tile_size, 2))
-        delta_zoom = metatile_zoom - tile_size_zoom
-
-        # if the metatile would have a zoom of less than zero, then clamp to
-        # zero. this means returning a tile at the wrong nominal zoom, but
-        # that might be preferable to not returning a tile at all.
-        if request_coord.zoom < delta_zoom:
-            meta_coord = Coordinate(0, 0, 0)
-            offset_coord = Coordinate(0, 0, 0)
-
-        else:
-            meta_coord = Coordinate(
-                zoom=request_coord.zoom - delta_zoom,
-                column=request_coord.column >> delta_zoom,
-                row=request_coord.row >> delta_zoom)
-            offset_coord = Coordinate(
-                zoom=delta_zoom,
-                column=(request_coord.column -
-                        (meta_coord.column << delta_zoom)),
-                row=request_coord.row - (meta_coord.row << delta_zoom))
-
-        return meta_coord, offset_coord
 
 
 class LayerConfig(object):
