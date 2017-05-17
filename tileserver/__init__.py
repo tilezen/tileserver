@@ -27,6 +27,7 @@ import shapely.geometry
 import shapely.ops
 import shapely.wkb
 import yaml
+import os
 import os.path
 import math
 
@@ -537,6 +538,10 @@ def create_tileserver_from_config(config):
     layer_config = LayerConfig(all_layer_names, layer_data)
 
     conn_info = config['postgresql']
+    conn_info['host'] = os.environ.get('POSTGRES_PORT_5432_TCP_ADDR')
+    conn_info['port'] = os.environ.get('POSTGRES_PORT_5432_TCP_PORT')
+    conn_info['user'] = os.environ.get('POSTGRES_ENV_POSTGRES_USER')
+    conn_info['password'] = os.environ.get('POSTGRES_ENV_POSTGRES_PASSWORD')
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
@@ -551,14 +556,22 @@ def create_tileserver_from_config(config):
             store = make_store(store_type, store_name, store_config)
 
     cache = NullCache()
-    cache_config = config.get('cache')
+    cache_config = config.get('cache') or os.environ.get('CACHE_TYPE')
     if cache_config:
-        cache_type = cache_config.get('type')
+        cache_type = os.environ.get('CACHE_TYPE') or cache_config.get('type')
         if cache_type == 'redis':
             import redis
             from tileserver.cache import RedisCache
-            redis_config = cache_config.get('redis', {})
-            redis_client = redis.from_url(redis_config.get('url'))
+
+            if os.environ.get('REDIS_PORT_6379_TCP_ADDR'):
+                redis_url = 'redis://{}:{}'.format(
+                    os.environ.get('REDIS_PORT_6379_TCP_ADDR'),
+                    os.environ.get('REDIS_PORT_6379_TCP_PORT')
+                )
+            else:
+                redis_url = cache_config.get('redis', {}).get('url')
+
+            redis_client = redis.from_url(redis_url)
             cache = RedisCache(redis_client)
         elif cache_type == 'file':
             from tileserver.cache import FileCache
