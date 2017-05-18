@@ -34,7 +34,8 @@ def coord_is_valid(coord):
 RequestData = namedtuple('RequestData', 'layer_spec coord format tile_size')
 
 
-def parse_request_path(path, extensions_to_handle, path_tile_size=None):
+def parse_request_path(
+        path, extensions_to_handle, path_tile_size, max_interesting_zoom):
     """given a path, parse the underlying layer, coordinate, and format"""
     parts = path.split('/')
 
@@ -69,6 +70,8 @@ def parse_request_path(path, extensions_to_handle, path_tile_size=None):
         return None
     coord = Coordinate(zoom=zoom, column=column, row=row)
     if not coord_is_valid(coord):
+        return None
+    if coord.zoom > max_interesting_zoom:
         return None
     request_data = RequestData(layer_spec, coord, format, tile_size)
     return request_data
@@ -182,8 +185,9 @@ class TileServer(object):
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
 
-        request_data = parse_request_path(request.path, self.extensions,
-                                          self.path_tile_size)
+        request_data = parse_request_path(
+            request.path, self.extensions, self.path_tile_size,
+            self.max_interesting_zoom)
         if request_data is None:
             return self.generate_404(request)
 
