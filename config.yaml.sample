@@ -28,8 +28,11 @@ server:
   reload: true
   threaded: false
 
-# whether to include cors headers on responses
-cors: true
+http:
+  # whether to include cors headers on responses
+  cors: true
+  # client cache time in seconds ("Cache-Control: max-age" header)
+  max-age: 300
 
 # optional for health checks. This can be useful for monitoring to
 # verify that the service is still running and can connect to the
