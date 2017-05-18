@@ -125,7 +125,7 @@ class TileServer(object):
     def __init__(
             self, layer_config, extensions, data_fetcher, post_process_data,
             io_pool, store, cache, buffer_cfg, formats, health_checker=None,
-            add_cors_headers=False, path_tile_size=None,
+            add_cors_headers=False, max_age=None, path_tile_size=None,
             max_interesting_zoom=None):
         self.layer_config = layer_config
         self.extensions = extensions
@@ -138,6 +138,7 @@ class TileServer(object):
         self.formats = formats
         self.health_checker = health_checker
         self.add_cors_headers = add_cors_headers
+        self.max_age = max_age
         self.path_tile_size = path_tile_size or {}
         self.max_interesting_zoom = max_interesting_zoom or 20
 
@@ -163,8 +164,13 @@ class TileServer(object):
             status=status,
             mimetype=mimetype,
         )
+        headers = []
         if self.add_cors_headers:
-            response_args['headers'] = [('Access-Control-Allow-Origin', '*')]
+            headers.append(('Access-Control-Allow-Origin', '*'))
+        if self.max_age:
+            headers.append(('Cache-Control', 'max-age=%d' % self.max_age))
+        if headers:
+            response_args['headers'] = headers
         response = Response(body, **response_args)
 
         if status == 200:
@@ -378,7 +384,11 @@ def create_tileserver_from_config(config):
         health_check_url = health_check_config['url']
         health_checker = HealthChecker(health_check_url, conn_info)
 
-    add_cors_headers = config.get('cors', False)
+    http_cfg = config.get('http', {})
+    add_cors_headers = bool(http_cfg.get('cors', False))
+    max_age = http_cfg.get('max-age')
+    if max_age is not None:
+        max_age = int(max_age)
 
     path_tile_size = config.get('path_tile_size')
     max_interesting_zoom = config.get('max_interesting_zoom')
@@ -386,7 +396,7 @@ def create_tileserver_from_config(config):
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, cache, buffer_cfg, formats, health_checker, add_cors_headers,
-        path_tile_size, max_interesting_zoom)
+        max_age, path_tile_size, max_interesting_zoom)
     return tile_server
 
 
