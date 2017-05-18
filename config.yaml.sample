@@ -46,3 +46,10 @@ health:
 #     url: redis://localhost:6379
 #   file:
 #     prefix: directory_prefix
+
+# to support requesting tiles for different metatile sizes
+# these should get prefixed to the beginning of the url path
+path_tile_size:
+  # NOTE: the keys should be strings
+  "256": 1
+  "512": 2

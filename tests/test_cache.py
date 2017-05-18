@@ -34,78 +34,91 @@ class CacheHelperTests(unittest.TestCase):
 class FileCacheTests(unittest.TestCase):
     def test_obtain_lock(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import FileCache
+        from tileserver.cache import CacheKey, FileCache
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = FileCache('foo')
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(cache_key)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(cache_key)
 
     def test_obtain_lock_already_locked(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import FileCache, LockTimeout
+        from tileserver.cache import CacheKey, FileCache, LockTimeout
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = FileCache('foo')
         try:
             # Obtain a lock from "client A"
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(cache_key)
             with self.assertRaises(LockTimeout):
                 # Locking from "client B" should time out
-                c.obtain_lock(coord, fmt, timeout=1)
+                c.obtain_lock(cache_key, timeout=1)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(cache_key)
 
         # After releasing, obtaining the lock from "client A" should work
-        c.obtain_lock(coord, fmt)
-        c.release_lock(coord, fmt)
+        c.obtain_lock(cache_key)
+        c.release_lock(cache_key)
 
     def test_contextmanager_lock(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import FileCache, LockTimeout
+        from tileserver.cache import CacheKey, FileCache, LockTimeout
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = FileCache('foo')
 
         # A plain 'ol lock should work without exception
-        with c.lock(coord, fmt):
+        with c.lock(cache_key):
             pass
 
-        with c.lock(coord, fmt):
+        with c.lock(cache_key):
             with self.assertRaises(LockTimeout):
                 # A second lock on the same coord should time out
-                with c.lock(coord, fmt, timeout=1):
+                with c.lock(cache_key, timeout=1):
                     pass
 
     def test_set_get(self):
         import os
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import FileCache, clean_empty_parent_dirs
+        from tileserver.cache import CacheKey, FileCache, \
+            clean_empty_parent_dirs
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         tile_data = 'hello world'
 
         c = FileCache('foo')
-        c.set(coord, fmt, tile_data)
-        actual_data = c.get(coord, fmt)
+        c.set(cache_key, tile_data)
+        actual_data = c.get(cache_key)
 
         self.assertEquals(tile_data, actual_data)
 
-        key = c._generate_key('data', coord, fmt)
+        key = c._generate_key('data', cache_key)
         os.remove(key)
         clean_empty_parent_dirs(os.path.dirname(key))
 
@@ -141,68 +154,81 @@ class RedisCacheTests(unittest.TestCase):
 
     def test_obtain_lock(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import RedisCache
+        from tileserver.cache import CacheKey, RedisCache
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
+        tile_size = 1
+        layers = 'all'
         fmt = lookup_format_by_extension('mvt')
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = RedisCache(self.redis)
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(cache_key)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(cache_key)
 
     def test_obtain_lock_already_locked(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import RedisCache, LockTimeout
+        from tileserver.cache import CacheKey, RedisCache, LockTimeout
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = RedisCache(self.redis)
         try:
-            c.obtain_lock(coord, fmt)
+            c.obtain_lock(cache_key)
             with self.assertRaises(LockTimeout):
-                c.obtain_lock(coord, fmt, timeout=1)
+                c.obtain_lock(cache_key, timeout=1)
         finally:
-            c.release_lock(coord, fmt)
+            c.release_lock(cache_key)
 
-        c.obtain_lock(coord, fmt)
+        c.obtain_lock(cache_key)
 
     def test_contextmanager_lock(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import RedisCache, LockTimeout
+        from tileserver.cache import CacheKey, RedisCache, LockTimeout
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
 
         c = RedisCache(self.redis)
 
         # A plain 'ol lock should work without exception
-        with c.lock(coord, fmt):
+        with c.lock(cache_key):
             pass
 
-        with c.lock(coord, fmt):
+        with c.lock(cache_key):
             with self.assertRaises(LockTimeout):
                 # A second lock on the same coord should time out
-                with c.lock(coord, fmt, timeout=1):
+                with c.lock(cache_key, timeout=1):
                     pass
 
     def test_set_get(self):
         from ModestMaps.Core import Coordinate
-        from tileserver.cache import RedisCache
+        from tileserver.cache import CacheKey, RedisCache
         from tilequeue.format import lookup_format_by_extension
 
         coord = Coordinate(0, 0, 0)
         fmt = lookup_format_by_extension('mvt')
+        tile_size = 1
+        layers = 'all'
+        cache_key = CacheKey(coord, tile_size, layers, fmt)
         tile_data = 'hello world'
 
         c = RedisCache(self.redis)
-        c.set(coord, fmt, tile_data)
-        actual_data = c.get(coord, fmt)
+        c.set(cache_key, tile_data)
+        actual_data = c.get(cache_key)
 
         self.assertEquals(tile_data, actual_data)
-        self.redis.delete(c._generate_key('data', coord, fmt))
+        self.redis.delete(
+            c._generate_key('data', cache_key))
