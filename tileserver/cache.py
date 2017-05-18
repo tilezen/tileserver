@@ -149,11 +149,7 @@ class RedisCache(BaseCache):
 
     def set(self, cache_key, data):
         key = self._generate_key('data', cache_key)
-        if self.expires:
-            pipeline = self.client.pipeline(transaction=False)
-            pipeline.set(key, data).expire(key, self.expires).execute()
-        else:
-            self.client.set(key, data)
+        self.client.set(key, data, ex=self.expires)
 
     def get(self, cache_key):
         key = self._generate_key('data', cache_key)
