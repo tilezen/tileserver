@@ -53,3 +53,6 @@ path_tile_size:
   # NOTE: the keys should be strings
   "256": 1
   "512": 2
+
+# requests for zoom levels higher than this will 404
+max_interesting_zoom: 20
