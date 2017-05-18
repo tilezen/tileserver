@@ -44,6 +44,11 @@ health:
 #   type: <redis|file|null, default 'null'>
 #   redis:
 #     url: redis://localhost:6379
+#     options:
+#       # prefix added onto saved keys for namespace purposes
+#       key_prefix: tiles
+#       # time in seconds to keep key in cache
+#       expires: 900
 #   file:
 #     prefix: directory_prefix
 

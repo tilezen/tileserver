@@ -372,7 +372,8 @@ def create_tileserver_from_config(config):
             from tileserver.cache import RedisCache
             redis_config = cache_config.get('redis', {})
             redis_client = redis.from_url(redis_config.get('url'))
-            cache = RedisCache(redis_client)
+            redis_options = redis_config.get('options') or {}
+            cache = RedisCache(redis_client, **redis_options)
         elif cache_type == 'file':
             from tileserver.cache import FileCache
             file_config = cache_config.get('file', {})

@@ -89,6 +89,7 @@ class RedisCache(BaseCache):
         self.client = redis_client
         self.timeout = kwargs.get('timeout') or 10
         self.key_prefix = kwargs.get('key_prefix') or 'tiles'
+        self.expires = kwargs.get('expires')
 
     def _generate_key(self, key_type, cache_key):
         return '{}.{}.{}-{}-{}-{}-{}-{}'.format(
@@ -148,7 +149,7 @@ class RedisCache(BaseCache):
 
     def set(self, cache_key, data):
         key = self._generate_key('data', cache_key)
-        self.client.set(key, data)
+        self.client.set(key, data, ex=self.expires)
 
     def get(self, cache_key):
         key = self._generate_key('data', cache_key)
