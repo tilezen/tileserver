@@ -15,7 +15,6 @@ from tileserver.cache import CacheKey
 from tileserver.cache import NullCache
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
-import math
 import os.path
 import psycopg2
 import random
@@ -123,11 +122,11 @@ class TileServer(object):
     # we want this during development, but not during production
     propagate_errors = False
 
-    def __init__(self, layer_config, extensions, data_fetcher,
-                 post_process_data, io_pool, store, cache,
-                 buffer_cfg, formats, health_checker=None,
-                 add_cors_headers=False, metatile_size=None,
-                 path_tile_size=None, max_interesting_zoom=None):
+    def __init__(
+            self, layer_config, extensions, data_fetcher, post_process_data,
+            io_pool, store, cache, buffer_cfg, formats, health_checker=None,
+            add_cors_headers=False, path_tile_size=None,
+            max_interesting_zoom=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -139,12 +138,6 @@ class TileServer(object):
         self.formats = formats
         self.health_checker = health_checker
         self.add_cors_headers = add_cors_headers
-        self.metatile_size = metatile_size
-        if self.metatile_size is not None:
-            self.metatile_zoom = int(math.log(self.metatile_size, 2))
-            assert self.metatile_size == (1 << self.metatile_zoom), \
-                "Metatile sizes must be a power of two, but %d doesn't look " \
-                "like one." % self.metatile_size
         self.path_tile_size = path_tile_size or {}
         self.max_interesting_zoom = max_interesting_zoom or 20
 
@@ -387,17 +380,13 @@ def create_tileserver_from_config(config):
 
     add_cors_headers = config.get('cors', False)
 
-    metatile_size = None
-    metatile_config = config.get('metatile')
-    if metatile_config:
-        metatile_size = metatile_config.get('size')
     path_tile_size = config.get('path_tile_size')
     max_interesting_zoom = config.get('max_interesting_zoom')
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
         store, cache, buffer_cfg, formats, health_checker, add_cors_headers,
-        metatile_size, path_tile_size, max_interesting_zoom)
+        path_tile_size, max_interesting_zoom)
     return tile_server
 
 
