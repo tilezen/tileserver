@@ -89,7 +89,7 @@ def parse_layer_spec(layer_spec, layer_config):
     are unknown layers"""
     if layer_spec == 'all':
         layer_data = layer_config.all_layers
-        unique_layer_names = sorted_layer_names = 'all'
+        unique_layer_names = sorted_layer_names = ('all',)
     else:
         individual_layer_names = layer_spec.split(',')
         unique_layer_names = set()
@@ -199,12 +199,13 @@ class TileServer(object):
 
         unique_layer_names = layer_spec_result.unique_layer_names
         sorted_layer_names = layer_spec_result.sorted_layer_names
+        cache_key_layer_names = ','.join(sorted_layer_names)
 
         coord = request_data.coord
         format = request_data.format
         tile_size = request_data.tile_size
 
-        cache_key = CacheKey(coord, tile_size, sorted_layer_names, format)
+        cache_key = CacheKey(coord, tile_size, cache_key_layer_names, format)
         with self.cache.lock(cache_key):
             tile_data = self.cache.get(cache_key)
 
