@@ -250,10 +250,18 @@ class TileServer(object):
 
         return response
 
+    def preview_static(self, request):
+        with open('preview.html') as f:
+            return self.create_response(
+                request, 200, f.read(), 'text/html')
+
     def handle_request(self, request):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
+
+        if request.path == '/preview.html':
+            return self.preview_static(request)
 
         request_data = parse_request_path(request.path, self.extensions,
                                           self.path_tile_size)
@@ -538,10 +546,14 @@ def create_tileserver_from_config(config):
     layer_config = LayerConfig(all_layer_names, layer_data)
 
     conn_info = config['postgresql']
-    conn_info['host'] = os.environ.get('POSTGRES_PORT_5432_TCP_ADDR')
-    conn_info['port'] = os.environ.get('POSTGRES_PORT_5432_TCP_PORT')
-    conn_info['user'] = os.environ.get('POSTGRES_ENV_POSTGRES_USER')
-    conn_info['password'] = os.environ.get('POSTGRES_ENV_POSTGRES_PASSWORD')
+    postgres_url = os.environ.get('POSTGRES_URL')
+    if postgres_url:
+        import urlparse
+        parsed = urlparse.urlparse(postgres_url)
+        conn_info['host'] = parsed.hostname
+        conn_info['port'] = parsed.port
+        conn_info['user'] = parsed.username
+        conn_info['password'] = parsed.password
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
@@ -563,12 +575,8 @@ def create_tileserver_from_config(config):
             import redis
             from tileserver.cache import RedisCache
 
-            if os.environ.get('REDIS_PORT_6379_TCP_ADDR'):
-                redis_url = 'redis://{}:{}'.format(
-                    os.environ.get('REDIS_PORT_6379_TCP_ADDR'),
-                    os.environ.get('REDIS_PORT_6379_TCP_PORT')
-                )
-            else:
+            redis_url = os.environ.get('REDIS_URL')
+            if not redis_url:
                 redis_url = cache_config.get('redis', {}).get('url')
 
             redis_client = redis.from_url(redis_url)

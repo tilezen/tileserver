@@ -1,0 +1,23 @@
+version: '2'
+services:
+  tileserver:
+    build: .
+    environment:
+      - CACHE_TYPE=redis
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@postgis:5432/$POSTGRES_DB
+    env_file: .env
+    volumes:
+      - ".:/usr/src/app"
+    ports:
+      - "8000:8000"
+    links:
+      - postgis
+      - redis
+  redis:
+    image: redis
+  postgis:
+    image: mdillon/postgis:9.5
+    env_file: .env
+    volumes:
+      - "./pgdata:/var/lib/postgresql/data"
