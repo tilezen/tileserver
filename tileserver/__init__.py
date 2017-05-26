@@ -554,6 +554,7 @@ def create_tileserver_from_config(config):
         conn_info['port'] = parsed.port
         conn_info['user'] = parsed.username
         conn_info['password'] = parsed.password
+        conn_info['dbnames'] = [parsed.path[1:]]
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
     data_fetcher = DataFetcher(
