@@ -1,6 +1,15 @@
 CHANGELOG
 =========
 
+v2.1.0
+------
+* Remove TOI handling
+* Add Redis and File backed caches
+* Generate only the coordinate requested, and not the metatile
+* Respond with 404 for zooms that are too high
+* Add ability to expire redis keys
+* Support responding with cache-control max-age
+
 v2.0.0
 ------
 * Remove tiles of interest-related code (See [#85](https://github.com/tilezen/tileserver/pull/85))
