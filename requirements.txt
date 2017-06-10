@@ -23,5 +23,5 @@ Werkzeug==0.9.6
 wsgiref==0.1.2
 zope.dottedname==4.1.0
 edtf==0.9.3
-git+https://github.com/mapzen/mapbox-vector-tile@v1.2.0#egg=mapbox-vector-tile
+mapbox-vector-tile==1.2.0
 git+https://github.com/mapzen/tilequeue@v1.9.0#egg=tilequeue
