@@ -127,7 +127,7 @@ class MockRedis(object):
     def __init__(self):
         self._data = {}
 
-    def set(self, key, data):
+    def set(self, key, data, ex=None):
         self._data[key] = data
 
     def get(self, key):
