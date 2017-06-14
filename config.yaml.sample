@@ -81,3 +81,5 @@ yaml:
     # useful when the output functions have already been generated
     # and it's simply a matter of pointing to them
     dotted-name: path.to.function.returning.mapping
+    args:
+      - 'any-args-to-pass'
