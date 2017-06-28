@@ -124,7 +124,7 @@ class TileServer(object):
 
     def __init__(
             self, layer_config, extensions, data_fetcher, post_process_data,
-            io_pool, store, cache, buffer_cfg, formats, health_checker=None,
+            io_pool, cache, buffer_cfg, formats, health_checker=None,
             add_cors_headers=False, max_age=None, path_tile_size=None,
             max_interesting_zoom=None):
         self.layer_config = layer_config
@@ -132,7 +132,6 @@ class TileServer(object):
         self.data_fetcher = data_fetcher
         self.post_process_data = post_process_data
         self.io_pool = io_pool
-        self.store = store
         self.cache = cache
         self.buffer_cfg = buffer_cfg
         self.formats = formats
@@ -272,24 +271,6 @@ class LayerConfig(object):
                            for x in self.all_layer_names]
 
 
-def make_store(store_type, store_name, store_config):
-    if store_type == 'directory':
-        from tilequeue.store import make_tile_file_store
-        return make_tile_file_store(store_name)
-
-    elif store_type == 's3':
-        from tilequeue.store import make_s3_store
-        path = store_config.get('path', 'osm')
-        date_prefix = store_config.get('date-prefix', '')
-        reduced_redundancy = store_config.get('reduced_redundancy', True)
-        return make_s3_store(
-            store_name, path=path, reduced_redundancy=reduced_redundancy,
-            date_prefix=date_prefix)
-
-    else:
-        raise ValueError('Unrecognized store type: `{}`'.format(store_type))
-
-
 class HealthChecker(object):
 
     def __init__(self, url, conn_info):
@@ -354,14 +335,6 @@ def create_tileserver_from_config(config):
     data_fetcher = DataFetcher(
         conn_info, all_layer_data, io_pool, n_conn)
 
-    store = None
-    store_config = config.get('store')
-    if store_config:
-        store_type = store_config.get('type')
-        store_name = store_config.get('name')
-        if store_type and store_name:
-            store = make_store(store_type, store_name, store_config)
-
     cache = NullCache()
     cache_config = config.get('cache')
     if cache_config:
@@ -395,8 +368,8 @@ def create_tileserver_from_config(config):
 
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        store, cache, buffer_cfg, formats, health_checker, add_cors_headers,
-        max_age, path_tile_size, max_interesting_zoom)
+        cache, buffer_cfg, formats, health_checker, add_cors_headers, max_age,
+        path_tile_size, max_interesting_zoom)
     return tile_server
 
 
