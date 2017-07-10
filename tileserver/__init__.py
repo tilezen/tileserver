@@ -1,6 +1,7 @@
 from collections import namedtuple
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
+from tilequeue.command import make_output_calc_mapping
 from tilequeue.command import parse_layer_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format
@@ -126,7 +127,7 @@ class TileServer(object):
             self, layer_config, extensions, data_fetcher, post_process_data,
             io_pool, cache, buffer_cfg, formats, health_checker=None,
             add_cors_headers=False, max_age=None, path_tile_size=None,
-            max_interesting_zoom=None):
+            max_interesting_zoom=None, output_calc_mapping=None):
         self.layer_config = layer_config
         self.extensions = extensions
         self.data_fetcher = data_fetcher
@@ -140,6 +141,7 @@ class TileServer(object):
         self.max_age = max_age
         self.path_tile_size = path_tile_size or {}
         self.max_interesting_zoom = max_interesting_zoom or 20
+        self.output_calc_mapping = output_calc_mapping
 
     def __call__(self, environ, start_response):
         request = Request(environ)
@@ -229,6 +231,7 @@ class TileServer(object):
                 nominal_zoom,
                 unpadded_bounds,
                 self.post_process_data,
+                self.output_calc_mapping,
             )
 
             if layer_spec != 'all':
@@ -366,10 +369,15 @@ def create_tileserver_from_config(config):
     path_tile_size = config.get('path_tile_size')
     max_interesting_zoom = config.get('max_interesting_zoom')
 
+    yaml_config = config.get('yaml')
+    assert yaml_config, 'Missing yaml configuration'
+
+    output_calc_mapping = make_output_calc_mapping(yaml_config)
+
     tile_server = TileServer(
         layer_config, extensions, data_fetcher, post_process_data, io_pool,
-        cache, buffer_cfg, formats, health_checker, add_cors_headers, max_age,
-        path_tile_size, max_interesting_zoom)
+        cache, buffer_cfg, formats, health_checker, add_cors_headers,
+        max_age, path_tile_size, max_interesting_zoom, output_calc_mapping)
     return tile_server
 
 
