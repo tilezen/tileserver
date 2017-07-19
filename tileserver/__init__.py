@@ -401,6 +401,13 @@ if __name__ == '__main__':
     with open(config_path) as fp:
         config = yaml.load(fp)
 
+    from shapely import speedups
+    if speedups.available:
+        speedups.enable()
+        print 'Shapely speedups enabled'
+    else:
+        print 'Shapely speedups not enabled because they were not available'
+
     tile_server = create_tileserver_from_config(config)
     tile_server.propagate_errors = True
 
