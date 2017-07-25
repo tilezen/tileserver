@@ -72,7 +72,7 @@ yaml:
   parse:
     # this will parse the yaml files and compile them on startup
     # useful when iterating on updating the yaml files themselves
-    path: <path/to/vector-datasource/yaml-directory>
+    path: ../vector-datasource/yaml
   callable:
     # this will call a function that should return a mapping from
     # layer name to function that generates the output properties
