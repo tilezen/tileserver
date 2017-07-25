@@ -2,11 +2,14 @@ from collections import namedtuple
 from ModestMaps.Core import Coordinate
 from multiprocessing.pool import ThreadPool
 from tilequeue.command import make_output_calc_mapping
+from tilequeue.command import make_queries_generator
 from tilequeue.command import parse_layer_data
+from tilequeue.command import parse_source_data
 from tilequeue.format import extension_to_format
 from tilequeue.format import json_format
 from tilequeue.format import mvt_format
 from tilequeue.format import topojson_format
+from tilequeue.process import convert_source_data_to_feature_layers
 from tilequeue.process import format_coord
 from tilequeue.process import process_coord_no_format
 from tilequeue.query import DataFetcher
@@ -223,11 +226,14 @@ class TileServer(object):
             # properly (e.g: buildings or roads layer being cut against
             # landuse).
             unpadded_bounds = coord_to_mercator_bounds(coord)
-            feature_data_all = self.data_fetcher(
-                nominal_zoom, unpadded_bounds, self.layer_config.all_layers)
+
+            source_rows = self.data_fetcher(nominal_zoom, unpadded_bounds)
+            feature_layers = convert_source_data_to_feature_layers(
+                source_rows, self.layer_config.layer_data, unpadded_bounds,
+                nominal_zoom)
 
             processed_feature_layers, extra_data = process_coord_no_format(
-                feature_data_all['feature_layers'],
+                feature_layers,
                 nominal_zoom,
                 unpadded_bounds,
                 self.post_process_data,
@@ -327,16 +333,18 @@ def create_tileserver_from_config(config):
     with open(queries_config_path) as query_cfg_fp:
         queries_config = yaml.load(query_cfg_fp)
     all_layer_data, layer_data, post_process_data = parse_layer_data(
-        queries_config, buffer_cfg, template_path, reload_templates,
-        os.path.dirname(queries_config_path))
+        queries_config, buffer_cfg, os.path.dirname(queries_config_path))
     all_layer_names = [x['name'] for x in all_layer_data]
     layer_config = LayerConfig(all_layer_names, layer_data)
+    sources = parse_source_data(queries_config)
+    queries_generator = make_queries_generator(
+        sources, template_path, reload_templates)
 
     conn_info = config['postgresql']
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
-    data_fetcher = DataFetcher(
-        conn_info, all_layer_data, io_pool, n_conn)
+
+    data_fetcher = DataFetcher(conn_info, queries_generator, io_pool)
 
     cache = NullCache()
     cache_config = config.get('cache')
