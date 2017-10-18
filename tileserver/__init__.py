@@ -225,7 +225,9 @@ class TileServer(object):
             # landuse).
             unpadded_bounds = coord_to_mercator_bounds(coord)
 
-            source_rows = self.data_fetcher(nominal_zoom, unpadded_bounds)
+            for fetcher, _ in self.data_fetcher.fetch_tiles(dict(coord=coord)):
+                source_rows = fetcher(nominal_zoom, unpadded_bounds)
+
             feature_layers = convert_source_data_to_feature_layers(
                 source_rows, self.layer_config.layer_data, unpadded_bounds,
                 nominal_zoom)
