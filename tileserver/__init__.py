@@ -148,7 +148,7 @@ class TileServer(object):
         request = Request(environ)
         try:
             response = self.handle_request(request)
-        except:
+        except Exception:
             if self.propagate_errors:
                 raise
             stacktrace = format_stacktrace_one_line()
