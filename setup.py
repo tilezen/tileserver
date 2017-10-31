@@ -26,7 +26,9 @@ setup(name='tileserver',
           'werkzeug',
       ],
       test_suite='tests',
-      entry_points="""
-      # -*- Entry points: -*-
-      """,
+      entry_points=dict(
+          console_scripts=[
+              'tileserver = tileserver:main',
+          ]
+      )
       )

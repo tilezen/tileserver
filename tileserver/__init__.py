@@ -395,7 +395,7 @@ def wsgi_server(config_path):
     return tile_server
 
 
-if __name__ == '__main__':
+def main():
     from werkzeug.serving import run_simple
     import sys
 
@@ -422,3 +422,7 @@ if __name__ == '__main__':
                threaded=server_config.get('threaded', False),
                use_debugger=server_config.get('debug', False),
                use_reloader=server_config.get('reload', False))
+
+
+if __name__ == '__main__':
+    main()
