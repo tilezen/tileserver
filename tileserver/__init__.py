@@ -149,7 +149,7 @@ class TileServer(object):
         request = Request(environ)
         try:
             response = self.handle_request(request)
-        except:
+        except Exception:
             if self.propagate_errors:
                 raise
             stacktrace = format_stacktrace_one_line()
@@ -235,7 +235,9 @@ class TileServer(object):
             # landuse).
             unpadded_bounds = coord_to_mercator_bounds(coord)
 
-            source_rows = self.data_fetcher(nominal_zoom, unpadded_bounds)
+            for fetcher, _ in self.data_fetcher.fetch_tiles(dict(coord=coord)):
+                source_rows = fetcher(nominal_zoom, unpadded_bounds)
+
             feature_layers = convert_source_data_to_feature_layers(
                 source_rows, self.layer_config.layer_data, unpadded_bounds,
                 nominal_zoom)
@@ -418,7 +420,7 @@ def wsgi_server(config_path):
     return tile_server
 
 
-if __name__ == '__main__':
+def main():
     from werkzeug.serving import run_simple
     import sys
 
@@ -445,3 +447,7 @@ if __name__ == '__main__':
                threaded=server_config.get('threaded', False),
                use_debugger=server_config.get('debug', False),
                use_reloader=server_config.get('reload', False))
+
+
+if __name__ == '__main__':
+    main()
