@@ -16,4 +16,4 @@ RUN pip install --no-cache-dir -r requirements.txt \
  && pip install -e ../vector-datasource \
  && pip install -U gunicorn
 
-CMD [ "gunicorn", "--bind", "0.0.0.0", "--timeout", "90", "--workers", "5", "--reload", "--access-logfile", "-", "tileserver:wsgi_server('config.yaml')"]
+CMD [ "gunicorn", "--bind", "0.0.0.0", "--timeout", "90", "--workers", "5", "--reload", "--access-logfile", "-", "tileserver:wsgi_server('config.docker-compose.yaml')"]
