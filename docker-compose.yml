@@ -1,6 +1,7 @@
 version: '2'
 services:
   tileserver:
+    image: tilezen/tileserver
     build: .
     environment:
       - CACHE_TYPE=redis
