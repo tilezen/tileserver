@@ -17,6 +17,7 @@ from tileserver.cache import CacheKey
 from tileserver.cache import NullCache
 from werkzeug.wrappers import Request
 from werkzeug.wrappers import Response
+import os
 import os.path
 import psycopg2
 import random
@@ -181,14 +182,23 @@ class TileServer(object):
 
         return response
 
+    def preview_static(self, request):
+        with open('preview.html') as f:
+            return self.create_response(
+                request, 200, f.read(), 'text/html')
+
     def handle_request(self, request):
         if (self.health_checker and
                 self.health_checker.is_health_check(request)):
             return self.health_checker(request)
 
+        if request.path == '/preview.html':
+            return self.preview_static(request)
+
         request_data = parse_request_path(
             request.path, self.extensions, self.path_tile_size,
             self.max_interesting_zoom)
+
         if request_data is None:
             return self.generate_404(request)
 
@@ -338,6 +348,15 @@ def create_tileserver_from_config(config):
     layer_config = LayerConfig(all_layer_names, layer_data)
 
     conn_info = config['postgresql']
+    postgres_url = os.environ.get('POSTGRES_URL')
+    if postgres_url:
+        import urlparse
+        parsed = urlparse.urlparse(postgres_url)
+        conn_info['host'] = parsed.hostname
+        conn_info['port'] = parsed.port
+        conn_info['user'] = parsed.username
+        conn_info['password'] = parsed.password
+        conn_info['dbnames'] = [parsed.path[1:]]
     n_conn = len(layer_data)
     io_pool = ThreadPool(n_conn)
 
@@ -345,16 +364,22 @@ def create_tileserver_from_config(config):
         conn_info, template_path, reload_templates, queries_config, io_pool)
 
     cache = NullCache()
-    cache_config = config.get('cache')
+    cache_config = config.get('cache') or os.environ.get('CACHE_TYPE')
     if cache_config:
-        cache_type = cache_config.get('type')
+        cache_type = os.environ.get('CACHE_TYPE') or cache_config.get('type')
         if cache_type == 'redis':
             import redis
             from tileserver.cache import RedisCache
+
             redis_config = cache_config.get('redis', {})
-            redis_client = redis.from_url(redis_config.get('url'))
+            redis_url = os.environ.get('REDIS_URL')
+            if not redis_url:
+                redis_url = redis_config.get('url')
+
+            redis_client = redis.from_url(redis_url)
             redis_options = redis_config.get('options') or {}
             cache = RedisCache(redis_client, **redis_options)
+
         elif cache_type == 'file':
             from tileserver.cache import FileCache
             file_config = cache_config.get('file', {})

@@ -1,0 +1,33 @@
+postgresql:
+  host: localhost
+  port: 5432
+  dbnames: ['tiles-postgis-dev-1']
+  user: osm
+  password: osmpassword
+yaml:
+  type: parse
+  parse:
+    path: ../vector-datasource/yaml
+queries:
+  config: ../vector-datasource/queries.yaml
+  template-path: ../vector-datasource/queries
+  reload-templates: true
+formats: [json, topojson, mvt]
+buffer: {}
+server:
+  host: 0.0.0.0
+  port: 8080
+  debug: true
+  reload: true
+  threaded: false
+cors: true
+health:
+  url: /healthcheck
+cache:
+  type: redis
+  redis:
+    url: redis://localhost:6379
+# cache tiles locally
+# store:
+#   type: directory
+#   name: tiles
