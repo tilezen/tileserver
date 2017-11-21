@@ -215,6 +215,7 @@ class TileServer(object):
         coord = request_data.coord
         format = request_data.format
         tile_size = request_data.tile_size
+        scale = 4096 * tile_size
 
         cache_key = CacheKey(coord, tile_size, cache_key_layer_names, format)
         with self.cache.lock(cache_key):
@@ -226,7 +227,6 @@ class TileServer(object):
 
             nominal_zoom = calculate_nominal_zoom(coord.zoom, tile_size)
 
-            cut_coords = ()
             # fetch data for all layers, even if the request was for a partial
             # set. this ensures that we can always store the result, allowing
             # for reuse, but also that any post-processing functions which
@@ -264,9 +264,10 @@ class TileServer(object):
                 processed_feature_layers,
                 (format,),
                 unpadded_bounds,
-                cut_coords,
+                [coord],
                 self.buffer_cfg,
                 extra_data,
+                scale,
             )
 
             assert len(formatted_tiles) == 1
