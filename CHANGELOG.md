@@ -1,6 +1,31 @@
 CHANGELOG
 =========
 
+v2.2.0
+------
+
+* Update for changes in the `process_coord` interface. [PR #126](https://github.com/tilezen/tileserver/pull/126).
+* Add `DOCKER.md` with details on how to use the Docker setup [PR #93](https://github.com/tilezen/tileserver/pull/93).
+* Update package versions to latest. [PR #125](https://github.com/tilezen/tileserver/pull/125).
+* Add a config yaml for docker
+* Generate tileserver binary [PR #124](https://github.com/tilezen/tileserver/pull/124).
+* Add v2.1.1 changelog [PR #122](https://github.com/tilezen/tileserver/pull/122).
+* Include `VERSION` file in package [PR #121](https://github.com/tilezen/tileserver/pull/121).
+* Use new data fetcher interface, which allows for grouping. [PR #118](https://github.com/tilezen/tileserver/pull/118).
+* Add `raw_tiles` to `requirements.txt`.
+* Changes to match data fetcher interface upstream in tilequeue. [PR #112](https://github.com/tilezen/tileserver/pull/112).
+* Update to support queries by table [PR #110](https://github.com/tilezen/tileserver/pull/110).
+* Enable Shapely speedups if they're available [PR #108](https://github.com/tilezen/tileserver/pull/108).
+* Point tilequeue branch back to master
+* Update sample config for yaml parse section [PR #106](https://github.com/tilezen/tileserver/pull/106).
+* Update to pass through Python calculation functions for `min_zoom`.
+* Remove unused store references [PR #104](https://github.com/tilezen/tileserver/pull/104).
+* Add keyword arg to MockRedis to fix test. [PR #102](https://github.com/tilezen/tileserver/pull/102).
+* Get `edtf` and `mapbox-vector-tile` from pypi, not github
+* Pin to specific versions of `mapbox-vector-tile` and `tilequeue`.
+* Add Docker support.
+
+
 v2.1.1
 ------
 * Point tilequeue to specific version.
