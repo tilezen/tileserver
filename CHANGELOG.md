@@ -4,7 +4,7 @@ CHANGELOG
 v2.1.1
 ------
 * Point tilequeue to specific version.
-* Backport fix for including VERSION file in package. See [#265](https://github.com/tilezen/tileserver/pull/121).
+* Backport fix for including VERSION file in package. See [#265](https://github.com/tilezen/tilequeue/pull/265).
 
 v2.1.0
 ------
