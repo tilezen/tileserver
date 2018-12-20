@@ -18,7 +18,6 @@ v2.2.0
 * Update package versions to latest. [PR #125](https://github.com/tilezen/tileserver/pull/125).
 * Pin to specific versions of `mapbox-vector-tile` and `tilequeue`.
 * Get `edtf` and `mapbox-vector-tile` from pypi, not Github
-* Point tilequeue branch back to master
 * Add `raw_tiles` to `requirements.txt`.
 * Generate tileserver binary [PR #124](https://github.com/tilezen/tileserver/pull/124).
 * Add missing v2.1.1 changelog [PR #122](https://github.com/tilezen/tileserver/pull/122).
