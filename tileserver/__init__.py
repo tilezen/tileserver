@@ -261,6 +261,7 @@ class TileServer(object):
             formatted_tiles, extra_data = format_coord(
                 coord,
                 nominal_zoom,
+                nominal_zoom+1,
                 processed_feature_layers,
                 (format,),
                 unpadded_bounds,
